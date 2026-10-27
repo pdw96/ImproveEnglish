@@ -16,7 +16,7 @@ GEMINI_ENDPOINT = (
     f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 )
 VERTEX_EXPRESS_ENDPOINT = (
-    f"https://aiplatform.googleapis.com/v1/publishers/google/models/{GEMINI_MODEL}:generateContent"
+    f"https://aiplatform.googleapis.com/v1beta1/publishers/google/models/{GEMINI_MODEL}:generateContent"
 )
 
 
@@ -199,8 +199,21 @@ def _default_http_transport(
             raw = response.read().decode("utf-8")
             return json.loads(raw)
     except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            err_body = exc.read().decode("utf-8", errors="replace")
+            err_json = json.loads(err_body)
+            msg = err_json.get("error", {}).get("message", "")
+            if isinstance(msg, str) and msg.strip():
+                # 어떤 경우에도 헤더의 API 키 값이 에러 메시지에 섞이지 않도록 마스킹([G4] 보장)
+                api_key_val = headers.get("x-goog-api-key", "")
+                if api_key_val:
+                    msg = msg.replace(api_key_val, "[REDACTED]")
+                detail = f" ({msg.strip()[:160]})"
+        except Exception:
+            detail = ""
         raise GeminiServiceError(
-            f"AI 서버 요청이 실패했습니다(HTTP {exc.code}). API 키 또는 사용 한도를 확인해 주세요."
+            f"AI 서버 요청이 실패했습니다(HTTP {exc.code}){detail}. API 키 또는 사용 한도를 확인해 주세요."
         ) from None
     except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError):
         raise GeminiServiceError(
