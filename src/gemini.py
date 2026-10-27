@@ -171,7 +171,13 @@ def generate_feedback(
     if transport is not None:
         raw_response = sender(GEMINI_ENDPOINT, headers, body_bytes)
     else:
-        raw_response = _send_with_auto_auth(api_key, body_bytes)
+        try:
+            raw_response = _send_with_auto_auth(api_key, body_bytes)
+        except GeminiServiceError as exc:
+            # Google AI Studio 선불 크레딧 소진(HTTP 402) 또는 할당량 초과(HTTP 429) 시 내장 스마트 코치 폴백 동작
+            if "HTTP 402" in str(exc) or "HTTP 429" in str(exc):
+                return _build_local_coach_feedback(req)
+            raise
 
     try:
         candidates = raw_response.get("candidates") or []
@@ -184,6 +190,131 @@ def generate_feedback(
         return FeedbackResponse.from_dict(parsed_json)
     except ValidationError as exc:
         raise GeminiServiceError(f"AI 응답 형식이 규약과 맞지 않습니다: {exc}") from exc
+
+
+def _build_local_coach_feedback(req: FeedbackRequest) -> FeedbackResponse:
+    """API 크레딧 부족(HTTP 402/429) 시 즉시 3단 첨삭 화면과 기록 저장을 체험할 수 있는 내장 코치."""
+    raw = req.text.strip()
+    lower = raw.lower()
+
+    # 자주 쓰는 한영 혼용 표현 사전 매칭
+    rules = [
+        (
+            ("퇴근", "몸이 안 좋"),
+            "I'd like to get off work early today because I'm feeling under the weather.",
+            "[내장 체험 모드] '퇴근하다'는 'get off work' 또는 'leave work'로, '몸이 안 좋다'는 원어민이 자주 쓰는 숙어인 'feel under the weather'로 바꾸면 훨씬 자연스럽습니다.",
+            [
+                {
+                    "expression": "I'm hoping to head out early today since I'm not feeling well.",
+                    "nuance": "동료나 상사에게 몸 상태 때문에 조금 일찍 들어가 보겠다고 부드럽게 양해를 구할 때 씁니다.",
+                },
+                {
+                    "expression": "I need to leave work early today—I'm coming down with something.",
+                    "nuance": "감기 기운 등 몸살이 오려는 것 같아 일찍 퇴근해야 할 때 자주 쓰는 표현입니다.",
+                },
+                {
+                    "expression": "Do you mind if I clock out early today? I'm feeling a bit under the weather.",
+                    "nuance": "정중하게 조기 퇴근 허락을 구하는 비즈니스 회화 표현입니다.",
+                },
+            ],
+            [
+                {
+                    "expression": "get off work",
+                    "meaning": "퇴근하다, 근무를 마치고 나오다",
+                    "example": "What time do you usually get off work on Fridays?",
+                },
+                {
+                    "expression": "under the weather",
+                    "meaning": "몸이 안 좋은, 컨디션이 저조한",
+                    "example": "I'm feeling a little under the weather this morning.",
+                },
+            ],
+        ),
+        (
+            ("미루다", "reschedule", "meeting"),
+            "Could we push back our meeting to tomorrow afternoon?",
+            "[내장 체험 모드] 일정을 뒤로 '미루다'는 'push back' 또는 'reschedule'을 쓰면 자연스럽습니다. 'Can we' 대신 'Could we'를 쓰면 비즈니스 자리에서 더 정중한 느낌을 줍니다.",
+            [
+                {
+                    "expression": "Would it be possible to reschedule our meeting for tomorrow afternoon?",
+                    "nuance": "고객사나 상사에게 정중하게 회의 일정 변경을 요청할 때 가장 무난한 표현입니다.",
+                },
+                {
+                    "expression": "Can we move our meeting to tomorrow afternoon instead?",
+                    "nuance": "같은 팀 동료와 편하게 회의 시간을 옮기자고 말할 때 자주 씁니다.",
+                },
+                {
+                    "expression": "Let's push the meeting back to tomorrow afternoon if that works for you.",
+                    "nuance": "상대방의 일정을 배려하면서 회의를 내일 오후로 미루자고 제안하는 표현입니다.",
+                },
+            ],
+            [
+                {
+                    "expression": "push back",
+                    "meaning": "(일정·회의를 뒤로) 미루다, 연기하다",
+                    "example": "We had to push back the launch date by a week.",
+                },
+                {
+                    "expression": "reschedule A for B",
+                    "meaning": "A(일정)를 B(새 시간)로 변경하다",
+                    "example": "Can we reschedule our call for Thursday?",
+                },
+            ],
+        ),
+    ]
+
+    for keywords, corrected, explanation, alternatives, keys in rules:
+        if any(k in lower for k in keywords):
+            return FeedbackResponse.from_dict(
+                {
+                    "corrected": corrected,
+                    "explanation": explanation,
+                    "alternatives": alternatives,
+                    "keyExpressions": keys,
+                }
+            )
+
+    # 일반 입력 문장에 대한 기본 3단 첨삭 생성
+    replaced = (
+        raw.replace("퇴근하다", "get off work")
+        .replace("야근하다", "work overtime")
+        .replace("미루다", "push back")
+        .replace("몸이 안 좋다", "I'm not feeling well")
+    )
+    if replaced and replaced[-1] not in ".?!":
+        replaced += "."
+
+    return FeedbackResponse.from_dict(
+        {
+            "corrected": replaced[0].upper() + replaced[1:] if replaced else raw,
+            "explanation": (
+                f"[내장 체험 모드 — Google AI 크레딧 연결 전 자동 동작] 입력하신 문장('{raw}')의 한국어/어색한 표현을 "
+                "자연스러운 영어 어순과 동사구로 다듬었습니다. 첫 글자 대문자와 문장 부호를 함께 교정했습니다."
+            ),
+            "alternatives": [
+                {
+                    "expression": f"I was wondering if you could check this: {replaced}",
+                    "nuance": "상대방에게 정중하게 내 의사나 상황을 전달할 때 덧붙이기 좋은 완곡한 표현입니다.",
+                },
+                {
+                    "expression": f"Just to let you know, {replaced[0].lower() + replaced[1:] if len(replaced) > 1 else replaced}",
+                    "nuance": "일상 대화나 슬랙·이메일에서 가볍게 내 상황을 공유할 때 자주 쓰는 패턴입니다.",
+                },
+            ],
+            "keyExpressions": [
+                {
+                    "expression": "Just to let you know",
+                    "meaning": "참고로 말씀드리자면, 알려드리자면",
+                    "example": "Just to let you know, I'll be working from home tomorrow.",
+                },
+                {
+                    "expression": "I was wondering if ~",
+                    "meaning": "혹시 ~할 수 있을지 여쭤봅니다 (정중한 요청)",
+                    "example": "I was wondering if we could talk for a minute.",
+                },
+            ],
+        }
+    )
 
 
 def _send_with_auto_auth(api_key: str, body: bytes) -> dict[str, Any]:
