@@ -65,3 +65,17 @@
 |---|---|---|
 | PR 1 | 프로젝트 기본 설정, AI 첨삭 데이터 구조(`feedback.ts`), Gemini 연동(`gemini.ts`), 로컬 자동 저장소(`historyStore.ts`), 서버 API 및 자동 시험 | [G1], [G2], [G3], [G4] 서버·데이터 계층 |
 | PR 2 | 문장 입력창·마이크 음성 입력 버튼·3단 첨삭 결과 카드·이전 첨삭 기록 목록 웹 화면(UI) 연결 | 조각 1 전체 시나리오 및 화면 동작 |
+
+## 바뀐 결정 (2026-10-27)
+
+- **로컬 서버 실행 언어 변경 (Node.js → Python 3.14 표준 라이브러리)**:
+  - PC에 Node.js가 없고 방금 설치한 Python 3.14(`3.14.7`)가 준비되어 있으므로, 추가 런타임·패키지 설치 없이 바로 실행되도록 서버와 자동 시험을 Python 3.14 표준 라이브러리로 구현한다(화면 기능과 API 입출력 모양은 동일).
+  - 대응 파일:
+    - `.env.example`, `.gitignore` (PR 1)
+    - `src/feedback_types.py` — 앵커볼트: AI 첨삭 요청·응답·기록 데이터 구조 및 검증 (PR 1)
+    - `src/gemini.py` — Google Gemini API(`gemini-2.5-flash`) 구조화 출력 연동 (PR 1)
+    - `src/history_store.py` — `data/feedback-history.json` 로컬 자동 저장소 (PR 1)
+    - `src/app.py` — 로컬 웹 서버(`POST /api/feedback`, `GET /api/history` 및 정적 파일 제공) (PR 1)
+    - `tests/test_app.py` — [G1]~[G4] 자동 시험 및 변조본 대조 시험 (PR 1)
+    - `public/index.html`, `public/app.js`, `public/styles.css` — 웹 화면(UI) (PR 2)
+
