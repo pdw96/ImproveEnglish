@@ -11,20 +11,15 @@ from typing import Any, Callable
 
 from src.feedback_types import FeedbackRequest, FeedbackResponse, ValidationError
 
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3.8-flash"
+FALLBACK_MODELS = (
+    "gemini-3.8-flash",
+    "gemini-flash-latest",
+    "gemini-2.5-flash",
+)
 GEMINI_ENDPOINT = (
     f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 )
-VERTEX_EXPRESS_ENDPOINT = (
-    f"https://aiplatform.googleapis.com/v1beta1/publishers/google/models/{GEMINI_MODEL}:generateContent"
-)
-
-
-def resolve_gemini_endpoint(api_key: str) -> str:
-    """키 종류(AI Studio 'AIza...' vs Vertex AI Express 'AQ....')에 맞는 엔드포인트를 반환한다."""
-    if api_key.startswith("AQ."):
-        return VERTEX_EXPRESS_ENDPOINT
-    return GEMINI_ENDPOINT
 
 # 앵커볼트: AI 첨삭 프롬프트 핵심 규약 및 구조화 출력 스키마(responseSchema)
 SYSTEM_INSTRUCTION = (
@@ -192,37 +187,21 @@ def generate_feedback(
 
 
 def _send_with_auto_auth(api_key: str, body: bytes) -> dict[str, Any]:
-    """키 형식(AIza / AQ.)에 따라 AI Studio 헤더·Bearer·Vertex Express 경로를 순서대로 시도한다."""
-    attempts = [
-        (
-            GEMINI_ENDPOINT,
-            {
-                "Content-Type": "application/json; charset=utf-8",
-                "x-goog-api-key": api_key,
-            },
-        ),
-        (
-            GEMINI_ENDPOINT,
-            {
-                "Content-Type": "application/json; charset=utf-8",
-                "Authorization": f"Bearer {api_key}",
-            },
-        ),
-        (
-            f"https://aiplatform.googleapis.com/v1/publishers/google/models/{GEMINI_MODEL}:generateContent",
-            {
-                "Content-Type": "application/json; charset=utf-8",
-                "x-goog-api-key": api_key,
-            },
-        ),
-    ]
+    """최신 Gemini Flash 모델(gemini-3.8-flash, gemini-flash-latest 등)을 순서대로 호출한다."""
+    headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "x-goog-api-key": api_key,
+    }
     errors: list[str] = []
-    for url, hdrs in attempts:
+    for model_name in FALLBACK_MODELS:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
         try:
-            return _default_http_transport(url, hdrs, body, api_key_to_mask=api_key)
+            return _default_http_transport(url, headers, body, api_key_to_mask=api_key)
         except GeminiServiceError as exc:
             errors.append(str(exc))
-    # 첫 번째(기본 Gemini API)와 마지막 시도의 상세 사유를 함께 안내
+            # 404(모델 미지원)인 경우에만 다음 후보 모델로 넘어가고 그 외에는 중단
+            if "HTTP 404" not in str(exc):
+                break
     raise GeminiServiceError(" | ".join(dict.fromkeys(errors)))
 
 
