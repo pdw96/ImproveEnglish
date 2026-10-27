@@ -173,8 +173,10 @@ def generate_feedback(
     }
 
     sender = transport or _default_http_transport
-    endpoint = resolve_gemini_endpoint(api_key)
-    raw_response = sender(endpoint, headers, body_bytes)
+    if transport is not None:
+        raw_response = sender(GEMINI_ENDPOINT, headers, body_bytes)
+    else:
+        raw_response = _send_with_auto_auth(api_key, body_bytes)
 
     try:
         candidates = raw_response.get("candidates") or []
@@ -189,8 +191,46 @@ def generate_feedback(
         raise GeminiServiceError(f"AI 응답 형식이 규약과 맞지 않습니다: {exc}") from exc
 
 
+def _send_with_auto_auth(api_key: str, body: bytes) -> dict[str, Any]:
+    """키 형식(AIza / AQ.)에 따라 AI Studio 헤더·Bearer·Vertex Express 경로를 순서대로 시도한다."""
+    attempts = [
+        (
+            GEMINI_ENDPOINT,
+            {
+                "Content-Type": "application/json; charset=utf-8",
+                "x-goog-api-key": api_key,
+            },
+        ),
+        (
+            GEMINI_ENDPOINT,
+            {
+                "Content-Type": "application/json; charset=utf-8",
+                "Authorization": f"Bearer {api_key}",
+            },
+        ),
+        (
+            f"https://aiplatform.googleapis.com/v1/publishers/google/models/{GEMINI_MODEL}:generateContent",
+            {
+                "Content-Type": "application/json; charset=utf-8",
+                "x-goog-api-key": api_key,
+            },
+        ),
+    ]
+    errors: list[str] = []
+    for url, hdrs in attempts:
+        try:
+            return _default_http_transport(url, hdrs, body, api_key_to_mask=api_key)
+        except GeminiServiceError as exc:
+            errors.append(str(exc))
+    # 첫 번째(기본 Gemini API)와 마지막 시도의 상세 사유를 함께 안내
+    raise GeminiServiceError(" | ".join(dict.fromkeys(errors)))
+
+
 def _default_http_transport(
-    url: str, headers: dict[str, str], body: bytes
+    url: str,
+    headers: dict[str, str],
+    body: bytes,
+    api_key_to_mask: str = "",
 ) -> dict[str, Any]:
     """표준 urllib을 사용해 Gemini REST 엔드포인트를 호출한다."""
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
@@ -205,11 +245,11 @@ def _default_http_transport(
             err_json = json.loads(err_body)
             msg = err_json.get("error", {}).get("message", "")
             if isinstance(msg, str) and msg.strip():
-                # 어떤 경우에도 헤더의 API 키 값이 에러 메시지에 섞이지 않도록 마스킹([G4] 보장)
-                api_key_val = headers.get("x-goog-api-key", "")
-                if api_key_val:
-                    msg = msg.replace(api_key_val, "[REDACTED]")
-                detail = f" ({msg.strip()[:160]})"
+                # 어떤 경우에도 API 키 값이 에러 메시지에 섞이지 않도록 마스킹([G4] 보장)
+                mask_key = api_key_to_mask or headers.get("x-goog-api-key", "")
+                if mask_key:
+                    msg = msg.replace(mask_key, "[REDACTED]")
+                detail = f" ({msg.strip()[:180]})"
         except Exception:
             detail = ""
         raise GeminiServiceError(

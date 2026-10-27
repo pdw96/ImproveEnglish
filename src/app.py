@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import importlib
 import json
 import mimetypes
 import os
@@ -11,6 +12,7 @@ import pathlib
 from typing import Callable
 from urllib.parse import urlparse
 
+import src.gemini as gemini_module
 from src.feedback_types import (
     FeedbackRecord,
     FeedbackRequest,
@@ -34,8 +36,15 @@ class FeedbackApp:
         public_dir: pathlib.Path | None = None,
     ) -> None:
         self.store = store or HistoryStore()
-        self.ai_fn = ai_fn or generate_feedback
+        self._custom_ai_fn = ai_fn
         self.public_dir = public_dir or PUBLIC_DIR
+
+    def _call_ai(self, req: FeedbackRequest) -> FeedbackResponse:
+        if self._custom_ai_fn is not None:
+            return self._custom_ai_fn(req)
+        if os.environ.get("DOTENV_AUTORELOAD") == "1":
+            importlib.reload(gemini_module)
+        return gemini_module.generate_feedback(req)
 
     def handle_get_history(self) -> tuple[int, dict[str, object]]:
         """저장된 첨삭 기록 목록을 최신순으로 반환한다([G3])."""
@@ -61,12 +70,12 @@ class FeedbackApp:
             return HTTPStatus.BAD_REQUEST, {"error": str(exc)}
 
         try:
-            feedback = self.ai_fn(req)
+            feedback = self._call_ai(req)
         except ValidationError as exc:
             return HTTPStatus.BAD_GATEWAY, {
                 "error": f"AI 응답 형식이 규약과 맞지 않습니다: {exc}"
             }
-        except GeminiServiceError as exc:
+        except gemini_module.GeminiServiceError as exc:
             return HTTPStatus.BAD_GATEWAY, {"error": str(exc)}
 
         record = FeedbackRecord.create(req, feedback)
