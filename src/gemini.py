@@ -90,8 +90,11 @@ class GeminiServiceError(RuntimeError):
     """Gemini API 호출 또는 설정 과정에서 발생한 예외(키 값은 절대 포함하지 않음)."""
 
 
-def load_dotenv_file(dotenv_path: pathlib.Path | None = None) -> None:
-    """저장소 루트의 .env 파일이 있으면 아직 설정되지 않은 환경변수를 불러온다."""
+def load_dotenv_file(
+    dotenv_path: pathlib.Path | None = None,
+    override: bool = False,
+) -> None:
+    """저장소 루트의 .env 파일이 있으면 환경변수를 불러온다."""
     target = dotenv_path or (pathlib.Path(__file__).resolve().parent.parent / ".env")
     if not target.is_file():
         return
@@ -107,13 +110,18 @@ def load_dotenv_file(dotenv_path: pathlib.Path | None = None) -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip("'\"")
-        if key and key not in os.environ:
+        if key and (override or key not in os.environ):
             os.environ[key] = value
 
 
 def get_api_key() -> str:
-    """환경변수에서 GEMINI_API_KEY를 읽는다([G4] 보장)."""
+    """환경변수(또는 .env 파일)에서 GEMINI_API_KEY를 읽는다([G4] 보장)."""
+    load_dotenv_file(override=False)
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key or api_key == "your_gemini_api_key_here":
+        # 서버 실행 중 .env 파일을 수정한 경우를 위해 다시 한 번 읽음
+        load_dotenv_file(override=True)
+        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key or api_key == "your_gemini_api_key_here":
         raise GeminiServiceError(
             "GEMINI_API_KEY 환경변수가 설정되지 않았습니다. .env 파일에 유효한 API 키를 설정해 주세요."
