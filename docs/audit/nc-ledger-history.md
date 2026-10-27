@@ -9,3 +9,22 @@
 
 | NC | 무엇 | 낸 회차 | 담당 | 심각도 | 상태 | 판정과 근거 |
 |---|---|---|---|---|---|---|
+
+## 회차 1 — `audit-secrets` · 조각 1 `ai-feedback` (2026-10-27)
+
+- **감사한 커밋**: `bbf98e2` · **감사자**: `audit-secrets`
+- 기록: `docs/audit/nc-ledger-history.md`
+- 낸 것: 없음
+- 지난 회차: 없음 — 첫 회차
+- 관찰: 없음
+- 담당 없음: 없음
+
+## 회차 2 — `audit-contract` · 조각 1 `ai-feedback` (2026-10-27)
+
+- **감사한 커밋**: `bbf98e2` · **감사자**: `audit-contract`
+- 기록: `docs/audit/nc-ledger-history.md`
+- 낸 것: 없음
+- 지난 회차: 없음 — 첫 회차
+- 관찰: OB-1 (`POST /api/feedback` 32KB 바이트 상한 및 `Content-Length` 헤더 기반 읽기는 코드에 정의됨), OB-2 (`design.md` 하단 `바뀐 결정` 절에 Python 3.14 파일 경로가 정의됨)
+- 담당 없음: 없음
+
