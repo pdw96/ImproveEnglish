@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ImproveEnglish — AI 영작·말하기 첨삭</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="app-header">
+      <div>
+        <span class="badge-brand">ImproveEnglish · 조각 1</span>
+        <h1>AI 영작·말하기 첨삭 코치</h1>
+        <p class="subtitle">
+          영어 문장(모르는 표현은 한국어로 섞어 써도 OK)을 입력하거나 마이크로 말해 보세요.
+          교정 이유부터 원어민 표현까지 3단으로 정리해 내 PC에 자동 기록합니다.
+        </p>
+      </div>
+    </header>
+
+    <main class="main-grid">
+      <!-- 입력 섹션 -->
+      <section class="card input-card" aria-labelledby="input-heading">
+        <div class="card-header-row">
+          <h2 id="input-heading">1. 문장 입력하기</h2>
+          <span id="input-mode-badge" class="mode-badge mode-text">글자 입력 모드</span>
+        </div>
+
+        <div class="sample-chips">
+          <span class="sample-label">예시 눌러보기:</span>
+          <button type="button" class="chip-btn" data-sample="I want to 퇴근하다 early today because 몸이 안 좋다.">
+            "I want to 퇴근하다 early today..."
+          </button>
+          <button type="button" class="chip-btn" data-sample="Can we 미루다 our meeting to tomorrow afternoon?">
+            "Can we 미루다 our meeting..."
+          </button>
+        </div>
+
+        <label for="sentence-input" class="sr-only">첨삭받을 영어 문장</label>
+        <textarea
+          id="sentence-input"
+          rows="4"
+          maxlength="1000"
+          placeholder="예: I want to 퇴근하다 early today. 또는 마이크 버튼을 눌러 영어로 말해 보세요."
+        ></textarea>
+
+        <div class="input-footer">
+          <span id="char-counter" class="char-counter">0 / 1,000자</span>
+          <div class="action-buttons">
+            <button type="button" id="voice-btn" class="btn btn-secondary">
+              🎤 마이크로 말하기
+            </button>
+            <button type="button" id="submit-btn" class="btn btn-primary">
+              ✨ AI 첨삭받기
+            </button>
+          </div>
+        </div>
+
+        <p id="status-msg" class="status-msg" role="status" aria-live="polite" hidden></p>
+      </section>
+
+      <!-- 3단 첨삭 결과 섹션 -->
+      <section id="result-section" class="result-section" aria-labelledby="result-heading" hidden>
+        <div class="section-title-row">
+          <h2 id="result-heading">2. AI 3단 첨삭 결과</h2>
+          <span id="result-meta" class="result-meta"></span>
+        </div>
+
+        <div class="result-cards">
+          <!-- ① 교정 및 이유 -->
+          <article class="card result-card highlight-card">
+            <div class="step-tag">① 교정 문장 및 이유</div>
+            <p class="original-line">
+              <span class="label">내가 쓴 문장:</span>
+              <span id="res-original"></span>
+            </p>
+            <div class="corrected-box">
+              <p id="res-corrected" class="corrected-text"></p>
+            </div>
+            <p id="res-explanation" class="explanation-text"></p>
+          </article>
+
+          <!-- ② 원어민 자연스러운 추천 표현 2~3가지 -->
+          <article class="card result-card">
+            <div class="step-tag">② 원어민이 자주 쓰는 자연스러운 표현 (2~3가지)</div>
+            <ul id="res-alternatives" class="alternatives-list"></ul>
+          </article>
+
+          <!-- ③ 외워두면 좋은 핵심 단어·표현 요약 -->
+          <article class="card result-card">
+            <div class="step-tag">③ 외워두면 좋은 핵심 단어·표현 요약</div>
+            <ul id="res-keys" class="keys-list"></ul>
+          </article>
+        </div>
+      </section>
+
+      <!-- 내 PC에 자동 저장된 이전 첨삭 기록 -->
+      <section class="card history-card" aria-labelledby="history-heading">
+        <div class="card-header-row">
+          <h2 id="history-heading">3. 내 이전 첨삭 기록 (자동 저장)</h2>
+          <span id="history-count" class="count-pill">0건</span>
+        </div>
+        <p class="history-guide">
+          첨삭받은 내역은 내 PC(<code>data/feedback-history.json</code>)에 자동 보관됩니다. 항목을 누르면 위에서 다시 볼 수 있습니다.
+        </p>
+        <ul id="history-list" class="history-list"></ul>
+        <p id="history-empty" class="empty-state">
+          아직 저장된 첨삭 기록이 없습니다. 첫 문장을 입력해 첨삭을 받아보세요!
+        </p>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

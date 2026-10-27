@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from src.app import FeedbackApp
+from src.app import FeedbackApp, create_http_server
 from src.feedback_types import (
      FeedbackRequest,
     FeedbackResponse,
@@ -169,6 +169,46 @@ class TestSlice1Guarantees(unittest.TestCase):
             with self.assertRaises(GeminiServiceError) as ctx:
                 generate_feedback(req, transport=fake_transport)
             self.assertNotIn(fake_secret, str(ctx.exception))
+
+    def test_http_server_static_and_api_end_to_end(self) -> None:
+        """PR 2 웹 화면(index.html, app.js, styles.css) 서빙, 경로 탐색 차단 및 API 전체 흐름 확인."""
+        # 1) 메인 웹 화면(/), 스크립트(/app.js), 스타일(/styles.css) 로드 확인
+        status_html, mime_html, raw_html = self.app.handle_static("/")
+        html = raw_html.decode("utf-8")
+        self.assertEqual(status_html, 200)
+        self.assertIn("text/html", mime_html)
+        self.assertIn("AI 영작·말하기 첨삭 코치", html)
+        self.assertIn("🎤 마이크로 말하기", html)
+
+        status_js, _, raw_js = self.app.handle_static("/app.js")
+        self.assertEqual(status_js, 200)
+        self.assertIn("/api/feedback", raw_js.decode("utf-8"))
+
+        status_css, _, _ = self.app.handle_static("/styles.css")
+        self.assertEqual(status_css, 200)
+
+        # 2) 경로 탐색(../.env 등) 차단 확인
+        status_traversal, _, _ = self.app.handle_static("/../.env.example")
+        self.assertEqual(status_traversal, 404)
+
+        # 3) POST /api/feedback → GET /api/history 전체 시나리오 확인
+        req_data = json.dumps(
+            {"text": "I want to 퇴근하다 early today", "inputMode": "text"},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        status_post, record = self.app.handle_post_feedback(req_data)
+        self.assertEqual(status_post, 200)
+        self.assertEqual(
+            record["feedback"]["corrected"],
+            "I'd like to get off work early today.",
+        )
+
+        status_hist, history = self.app.handle_get_history()
+        self.assertEqual(status_hist, 200)
+        self.assertEqual(len(history["items"]), 1)
+        self.assertEqual(
+            history["items"][0]["text"], "I want to 퇴근하다 early today"
+        )
 
 
 if __name__ == "__main__":

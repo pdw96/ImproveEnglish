@@ -73,6 +73,26 @@ class FeedbackApp:
         self.store.save_record(record)
         return HTTPStatus.OK, record.to_dict()
 
+    def handle_static(self, url_path: str) -> tuple[int, str, bytes]:
+        """정적 웹 화면 파일(index.html, app.js, styles.css)을 읽고 경로 탐색 공격을 차단한다."""
+        rel_path = "index.html" if url_path in ("", "/") else url_path.lstrip("/")
+        candidate = (self.public_dir / rel_path).resolve()
+        public_root = self.public_dir.resolve()
+
+        if not candidate.is_relative_to(public_root) or not candidate.is_file():
+            err_body = json.dumps(
+                {"error": "요청하신 페이지를 찾을 수 없습니다."},
+                ensure_ascii=False,
+            ).encode("utf-8")
+            return HTTPStatus.NOT_FOUND, "application/json; charset=utf-8", err_body
+
+        content_type, _ = mimetypes.guess_type(str(candidate))
+        mime = content_type or "application/octet-stream"
+        if mime.startswith("text/") or mime in ("application/javascript", "application/json"):
+            mime = f"{mime}; charset=utf-8"
+
+        return HTTPStatus.OK, mime, candidate.read_bytes()
+
 
 def create_http_server(
     host: str = "127.0.0.1",
@@ -112,25 +132,8 @@ def create_http_server(
             self._send_json(status, data)
 
         def _serve_static(self, url_path: str) -> None:
-            rel_path = "index.html" if url_path in ("", "/") else url_path.lstrip("/")
-            candidate = (active_app.public_dir / rel_path).resolve()
-            public_root = active_app.public_dir.resolve()
-
-            # 경로 탐색(Path Traversal) 방지
-            if not candidate.is_relative_to(public_root) or not candidate.is_file():
-                self._send_json(
-                    HTTPStatus.NOT_FOUND,
-                    {"error": "요청하신 페이지를 찾을 수 없습니다."},
-                )
-                return
-
-            content_type, _ = mimetypes.guess_type(str(candidate))
-            mime = content_type or "application/octet-stream"
-            if mime.startswith("text/") or mime in ("application/javascript", "application/json"):
-                mime = f"{mime}; charset=utf-8"
-
-            body = candidate.read_bytes()
-            self.send_response(HTTPStatus.OK)
+            status, mime, body = active_app.handle_static(url_path)
+            self.send_response(status)
             self.send_header("Content-Type", mime)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
