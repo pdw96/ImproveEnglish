@@ -15,6 +15,16 @@ GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_ENDPOINT = (
     f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 )
+VERTEX_EXPRESS_ENDPOINT = (
+    f"https://aiplatform.googleapis.com/v1/publishers/google/models/{GEMINI_MODEL}:generateContent"
+)
+
+
+def resolve_gemini_endpoint(api_key: str) -> str:
+    """키 종류(AI Studio 'AIza...' vs Vertex AI Express 'AQ....')에 맞는 엔드포인트를 반환한다."""
+    if api_key.startswith("AQ."):
+        return VERTEX_EXPRESS_ENDPOINT
+    return GEMINI_ENDPOINT
 
 # 앵커볼트: AI 첨삭 프롬프트 핵심 규약 및 구조화 출력 스키마(responseSchema)
 SYSTEM_INSTRUCTION = (
@@ -116,12 +126,9 @@ def load_dotenv_file(
 
 def get_api_key() -> str:
     """환경변수(또는 .env 파일)에서 GEMINI_API_KEY를 읽는다([G4] 보장)."""
-    load_dotenv_file(override=False)
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if not api_key or api_key == "your_gemini_api_key_here":
-        # 서버 실행 중 .env 파일을 수정한 경우를 위해 다시 한 번 읽음
+    if os.environ.get("DOTENV_AUTORELOAD") == "1":
         load_dotenv_file(override=True)
-        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key or api_key == "your_gemini_api_key_here":
         raise GeminiServiceError(
             "GEMINI_API_KEY 환경변수가 설정되지 않았습니다. .env 파일에 유효한 API 키를 설정해 주세요."
@@ -166,7 +173,8 @@ def generate_feedback(
     }
 
     sender = transport or _default_http_transport
-    raw_response = sender(GEMINI_ENDPOINT, headers, body_bytes)
+    endpoint = resolve_gemini_endpoint(api_key)
+    raw_response = sender(endpoint, headers, body_bytes)
 
     try:
         candidates = raw_response.get("candidates") or []

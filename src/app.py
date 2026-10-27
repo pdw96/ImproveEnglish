@@ -158,7 +158,8 @@ def create_http_server(
 
 def main() -> None:
     """로컬 서버 진입점."""
-    load_dotenv_file()
+    os.environ["DOTENV_AUTORELOAD"] = "1"
+    load_dotenv_file(override=True)
     port_str = os.environ.get("PORT", "8000").strip()
     port = int(port_str) if port_str.isdigit() else 8000
     server = create_http_server(host="127.0.0.1", port=port)
