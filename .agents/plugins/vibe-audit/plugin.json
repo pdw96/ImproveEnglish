@@ -1,0 +1,11 @@
+{
+  "name": "vibe-audit",
+  "displayName": "Vibe Audit (claude-kit)",
+  "version": "0.4.3",
+  "description": "목적별로 범위를 좁힌 읽기전용 감사자 6종 (시크릿 · 데이터 · 검사장치 · 운영 · 계약 · 내부규칙). 고칠 도구를 갖고 있지 않아 발견과 수정이 구조적으로 분리됩니다.",
+  "suggestedPrompts": [
+    "audit-secrets로 저장소 시크릿과 권한 경계를 감사해 줘",
+    "audit-contract로 공개 API와 하위 호환성을 감사해 줘",
+    "audit-brief로 기준 브랜치 대비 변경 브리핑을 만들고 감사해 줘"
+  ]
+}

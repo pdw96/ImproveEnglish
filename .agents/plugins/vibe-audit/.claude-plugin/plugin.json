@@ -1,0 +1,15 @@
+{
+  "name": "vibe-audit",
+  "version": "0.4.3",
+  "description": "목적별로 범위를 좁힌 읽기전용 감사자 6종. 고칠 도구를 갖고 있지 않아 발견과 수정이 구조적으로 분리됩니다.",
+  "author": {
+    "name": "도원"
+  },
+  "keywords": [
+    "audit",
+    "code-review",
+    "read-only",
+    "nonconformance"
+  ],
+  "license": "MIT"
+}

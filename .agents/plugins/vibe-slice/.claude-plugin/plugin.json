@@ -1,0 +1,15 @@
+{
+  "name": "vibe-slice",
+  "version": "0.8.0",
+  "description": "프로젝트를 조각으로 나눠 진행할 때 쓰는 문서 틀 여섯(의도 · 마스터플랜 · 작업 규칙 CLAUDE.md · 프로필 Profile.md · 조각 요구사항 · 설계)과 감사가 낸 부적합을 재감사로 닫힐 때까지 따라가는 부적합 대장의 틀, 리뷰 지적을 그 조각의 설계에 비춰 가르는 법. 절차는 claude-kit 의 절차 지도를 가리킵니다.",
+  "author": {
+    "name": "도원"
+  },
+  "keywords": [
+    "planning",
+    "requirements",
+    "design-doc",
+    "templates"
+  ],
+  "license": "MIT"
+}

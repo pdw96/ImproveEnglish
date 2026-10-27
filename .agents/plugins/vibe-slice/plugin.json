@@ -1,0 +1,11 @@
+{
+  "name": "vibe-slice",
+  "displayName": "Vibe Slice (claude-kit)",
+  "version": "0.8.0",
+  "description": "프로젝트를 조각으로 나눠 진행할 때 쓰는 문서 틀 여섯(의도 · 마스터플랜 · 작업 규칙 CLAUDE.md · 프로필 Profile.md · 조각 요구사항 · 설계)과 감사가 낸 부적합을 재감사로 닫힐 때까지 따라가는 부적합 대장의 틀(`slice-docs`), 리뷰 지적을 그 조각의 설계에 비춰 가르는 법(`slice-review`).",
+  "suggestedPrompts": [
+    "slice-docs 스킬로 프로젝트의 의도와 마스터플랜을 세워 줘",
+    "slice-docs 스킬로 마스터플랜에서 다음 조각을 꺼내 요구사항과 설계를 작성해 줘",
+    "slice-review 스킬로 이번 PR의 리뷰 지적을 설계에 비춰 갈라 줘"
+  ]
+}
