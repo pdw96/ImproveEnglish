@@ -1,0 +1,22 @@
+{
+  "id": "./?source=pwa",
+  "name": "ImproveEnglish — AI 영작·말하기 첨삭 코치",
+  "short_name": "ImproveEnglish",
+  "description": "서버 없이 스마트폰 기기 자체에 단어장·루틴을 저장하고 AI 영어 첨삭과 상황별 미션을 연습하는 개인 학습 앱",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f6f4ee",
+  "theme_color": "#1f4e3d",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ImproveEnglish 앱 아이콘">
+  <rect width="512" height="512" rx="112" fill="#1f4e3d" />
+  <rect x="52" y="52" width="408" height="408" rx="80" fill="#fcfbf8" stroke="#adc4b9" stroke-width="8" />
+  <path d="M128 156h256v28H128zm0 76h196v28H128zm0 76h232v28H128z" fill="#1f4e3d" opacity="0.22" />
+  <text x="256" y="310" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="188" font-weight="bold" fill="#1f4e3d">En</text>
+  <circle cx="382" cy="142" r="34" fill="#8f3519" />
+  <path d="M368 142l10 10 20-22" fill="none" stroke="#fcfbf8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

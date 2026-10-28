@@ -82,5 +82,33 @@
 - 관찰: OB-1 (`GET /api/mission/today` 쿼리 파라미터 `category`는 닫힌 목록(`all`, `work`, `daily`, `travel`, `opinion`)으로, `missionId`/`excludeId`는 내장 미션 ID 목록으로 엄격히 검증되며 위반 시 기존 API와 동일한 `400 Bad Request` 및 `{"error": "<한국어 메시지>"}` 규약을 따름)
 - 담당 없음: 없음
 
+## 회차 9 — `audit-secrets` · 조각 5 `standalone-mobile-app` (2026-10-28)
+
+- **감사한 커밋**: `6b86536` · 커밋 안 된 변경 포함 · **감사자**: `audit-secrets`
+- 기록: `docs/audit/nc-ledger-history.md`
+- 낸 것: 없음
+- 지난 회차: 회차 1 (`audit-secrets`, 열린 NC 및 U 없음)
+- 관찰: OB-1 (`public/standalone-engine.js` 및 `public/` 내 모든 파일에 하드코딩된 API 키가 없으며, 사용자가 `[모바일 앱 · 설정]` 탭에서 입력한 키는 해당 기기의 `localStorage`(`ie_gemini_api_key`)에만 저장되고 Gemini 호출 시 URL 쿼리가 아닌 `x-goog-api-key` 헤더로만 전송됨)
+- 담당 없음: 없음
+
+## 회차 10 — `audit-data` · 조각 5 `standalone-mobile-app` (2026-10-28)
+
+- **감사한 커밋**: `6b86536` · 커밋 안 된 변경 포함 · **감사자**: `audit-data`
+- 기록: `docs/audit/nc-ledger-history.md`
+- 낸 것: 없음
+- 지난 회차: 회차 7 (`audit-data`, 열린 NC 및 U 없음)
+- 관찰: OB-1 (`importBackupPayload`에서 JSON 객체 여부, `history`·`vocab` 배열 여부, `routine.goal`의 정수 범위(`1~20`, `1~50`)를 먼저 검증한 뒤에만 `localStorage`를 갱신하여 잘못된 백업 파일로부터 기존 기기 데이터를 보호함)
+- 담당 없음: 없음
+
+## 회차 11 — `audit-contract` · 조각 5 `standalone-mobile-app` (2026-10-28)
+
+- **감사한 커밋**: `6b86536` · 커밋 안 된 변경 포함 · **감사자**: `audit-contract`
+- 기록: `docs/audit/nc-ledger-history.md`
+- 낸 것: 없음
+- 지난 회차: 회차 8 (`audit-contract`, 열린 NC 및 U 없음)
+- 관찰: OB-1 (`public/standalone-engine.js`의 `handleLocalApiRequest`가 기존 파이썬 서버의 9개 `/api/*` 경로(`GET /api/history`, `POST /api/feedback`, `GET/POST /api/vocab`, `POST /api/vocab/review`, `DELETE /api/vocab/<id>`, `GET /api/routine`, `POST /api/routine/goal`, `GET /api/mission/today`)와 100% 동일한 JSON 응답 필드·상태 코드를 반환하여 프론트엔드 코드 변경 없이 단독 실행과 서버 연동을 모두 지원함)
+- 담당 없음: 없음
+
+
 
 

@@ -11,11 +11,14 @@
   const tabFeedbackBtn = document.getElementById("tab-feedback-btn");
   const tabVocabBtn = document.getElementById("tab-vocab-btn");
   const tabRoutineBtn = document.getElementById("tab-routine-btn");
+  const tabSettingsBtn = document.getElementById("tab-settings-btn");
   const panelFeedback = document.getElementById("panel-feedback");
   const panelVocab = document.getElementById("panel-vocab");
   const panelRoutine = document.getElementById("panel-routine");
+  const panelSettings = document.getElementById("panel-settings");
   const dueBadge = document.getElementById("due-badge");
   const routineTabBadge = document.getElementById("routine-tab-badge");
+  const settingsModeBadge = document.getElementById("settings-mode-badge");
 
   const bannerStreakPill = document.getElementById("banner-streak-pill");
   const bannerProgressText = document.getElementById("banner-progress-text");
@@ -99,6 +102,25 @@
   const missionHintsList = document.getElementById("mission-hints-list");
   const missionVocabList = document.getElementById("mission-vocab-list");
 
+  // 조각 5: 서버 없는 모바일 앱 · 설정 · 백업 요소
+  const engineStatusPill = document.getElementById("engine-status-pill");
+  const modeStandaloneBtn = document.getElementById("mode-standalone-btn");
+  const modeServerBtn = document.getElementById("mode-server-btn");
+  const pwaInstallBox = document.getElementById("pwa-install-box");
+  const pwaInstallBtn = document.getElementById("pwa-install-btn");
+  const apikeyStatusBadge = document.getElementById("apikey-status-badge");
+  const settingsApikeyInput = document.getElementById("settings-apikey-input");
+  const apikeyMaskedHint = document.getElementById("apikey-masked-hint");
+  const apikeySaveBtn = document.getElementById("apikey-save-btn");
+  const apikeyClearBtn = document.getElementById("apikey-clear-btn");
+  const apikeyStatusMsg = document.getElementById("apikey-status-msg");
+  const backupStatsBadge = document.getElementById("backup-stats-badge");
+  const backupExportBtn = document.getElementById("backup-export-btn");
+  const backupImportInput = document.getElementById("backup-import-input");
+  const backupStatusMsg = document.getElementById("backup-status-msg");
+
+  let deferredInstallPrompt = null;
+
   let currentInputMode = "text";
   let recognition = null;
   let isRecording = false;
@@ -123,18 +145,22 @@
     const isFeedback = target === "feedback";
     const isVocab = target === "vocab";
     const isRoutine = target === "routine";
+    const isSettings = target === "settings";
 
     panelFeedback.hidden = !isFeedback;
     panelVocab.hidden = !isVocab;
     if (panelRoutine) panelRoutine.hidden = !isRoutine;
+    if (panelSettings) panelSettings.hidden = !isSettings;
 
     tabFeedbackBtn.classList.toggle("active", isFeedback);
     tabVocabBtn.classList.toggle("active", isVocab);
     if (tabRoutineBtn) tabRoutineBtn.classList.toggle("active", isRoutine);
+    if (tabSettingsBtn) tabSettingsBtn.classList.toggle("active", isSettings);
 
     tabFeedbackBtn.setAttribute("aria-selected", String(isFeedback));
     tabVocabBtn.setAttribute("aria-selected", String(isVocab));
     if (tabRoutineBtn) tabRoutineBtn.setAttribute("aria-selected", String(isRoutine));
+    if (tabSettingsBtn) tabSettingsBtn.setAttribute("aria-selected", String(isSettings));
   }
 
   function focusActivePanelHeading(target) {
@@ -143,6 +169,8 @@
         ? "review-heading"
         : target === "routine"
         ? "routine-summary-heading"
+        : target === "settings"
+        ? "settings-mode-heading"
         : "input-heading";
     const headingEl = document.getElementById(headingId);
     if (headingEl && typeof headingEl.focus === "function") {
@@ -1192,11 +1220,207 @@
     });
   }
 
+  function showApikeyStatus(text, kind) {
+    if (!apikeyStatusMsg) return;
+    apikeyStatusMsg.hidden = false;
+    apikeyStatusMsg.textContent = text;
+    apikeyStatusMsg.className = `status-msg ${kind || "info"}`;
+  }
+
+  function showBackupStatus(text, kind) {
+    if (!backupStatusMsg) return;
+    backupStatusMsg.hidden = false;
+    backupStatusMsg.textContent = text;
+    backupStatusMsg.className = `status-msg ${kind || "info"}`;
+  }
+
+  function renderStandaloneSettings() {
+    const engine = window.ImproveEnglishStandalone;
+    if (!engine) return;
+
+    const mode = engine.getMode();
+    const isStandalone = mode === "standalone";
+
+    if (settingsModeBadge) {
+      settingsModeBadge.textContent = isStandalone ? "단독 앱 모드" : "PC 서버 모드";
+      settingsModeBadge.className = isStandalone
+        ? "tab-badge has-due"
+        : "tab-badge";
+    }
+    if (engineStatusPill) {
+      engineStatusPill.textContent = isStandalone
+        ? "온디바이스 단독 실행 중 (서버 불필요)"
+        : "PC 로컬 서버 연동 중";
+    }
+    if (modeStandaloneBtn && modeServerBtn) {
+      modeStandaloneBtn.className = isStandalone
+        ? "btn btn-primary"
+        : "btn btn-secondary";
+      modeServerBtn.className = !isStandalone
+        ? "btn btn-primary"
+        : "btn btn-secondary";
+    }
+
+    const hasKey = engine.hasApiKey();
+    if (apikeyStatusBadge) {
+      apikeyStatusBadge.textContent = hasKey
+        ? "개인 Gemini API 키 연결됨"
+        : "내장 스마트 코치 동작 중";
+      apikeyStatusBadge.className = hasKey
+        ? "routine-state-badge goal-met"
+        : "mode-badge mode-text";
+    }
+    if (apikeyMaskedHint) {
+      apikeyMaskedHint.textContent = hasKey
+        ? `현재 기기에 저장된 키: ${engine.getMaskedApiKey()}`
+        : "현재 기기에 저장된 API 키가 없습니다 (내장 스마트 코치 사용 중).";
+    }
+
+    const stats = engine.getLocalStats();
+    if (backupStatsBadge) {
+      backupStatsBadge.textContent = `기기 보관 중: 첨삭 ${stats.historyCount}건 · 단어 ${stats.vocabCount}개`;
+    }
+  }
+
+  async function refreshAllData() {
+    await fetchVocab();
+    await fetchHistory();
+    await fetchRoutine();
+    await fetchMission();
+    renderStandaloneSettings();
+  }
+
+  function setupMobileSettingsAndPwa() {
+    const engine = window.ImproveEnglishStandalone;
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
+    }
+
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      if (pwaInstallBox) {
+        pwaInstallBox.hidden = false;
+      }
+    });
+
+    if (pwaInstallBtn) {
+      pwaInstallBtn.addEventListener("click", async () => {
+        if (!deferredInstallPrompt) return;
+        deferredInstallPrompt.prompt();
+        await deferredInstallPrompt.userChoice;
+        deferredInstallPrompt = null;
+        if (pwaInstallBox) {
+          pwaInstallBox.hidden = true;
+        }
+      });
+    }
+
+    if (modeStandaloneBtn && engine) {
+      modeStandaloneBtn.addEventListener("click", async () => {
+        engine.setMode("standalone");
+        await refreshAllData();
+      });
+    }
+    if (modeServerBtn && engine) {
+      modeServerBtn.addEventListener("click", async () => {
+        engine.setMode("server");
+        await refreshAllData();
+      });
+    }
+
+    if (apikeySaveBtn && engine) {
+      apikeySaveBtn.addEventListener("click", () => {
+        const val = settingsApikeyInput ? settingsApikeyInput.value.trim() : "";
+        if (!val) {
+          showApikeyStatus("저장할 Gemini API 키를 입력해 주세요.", "error");
+          return;
+        }
+        engine.saveApiKey(val);
+        if (settingsApikeyInput) settingsApikeyInput.value = "";
+        renderStandaloneSettings();
+        showApikeyStatus(
+          "개인 Gemini API 키가 이 기기 내부에 안전하게 저장되었습니다.",
+          "info"
+        );
+      });
+    }
+
+    if (apikeyClearBtn && engine) {
+      apikeyClearBtn.addEventListener("click", () => {
+        engine.clearApiKey();
+        if (settingsApikeyInput) settingsApikeyInput.value = "";
+        renderStandaloneSettings();
+        showApikeyStatus(
+          "기기에 저장된 API 키가 삭제되었습니다. 내장 스마트 코치 모드로 동작합니다.",
+          "info"
+        );
+      });
+    }
+
+    if (backupExportBtn && engine) {
+      backupExportBtn.addEventListener("click", () => {
+        const payload = engine.exportBackupPayload();
+        const blob = new Blob([JSON.stringify(payload, null, 2)], {
+          type: "application/json;charset=utf-8",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const dateTag = new Date().toISOString().slice(0, 10);
+        a.href = url;
+        a.download = `improve-english-backup-${dateTag}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showBackupStatus(
+          "내 학습 데이터 백업 파일(.json)을 다운로드했습니다.",
+          "info"
+        );
+      });
+    }
+
+    if (backupImportInput && engine) {
+      backupImportInput.addEventListener("change", async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const parsed = JSON.parse(text);
+          const result = engine.importBackupPayload(parsed);
+          await refreshAllData();
+          showBackupStatus(
+            `백업 파일 복원 완료! (첨삭 ${result.historyCount}건 · 단어 ${result.vocabCount}개)`,
+            "info"
+          );
+        } catch (err) {
+          showBackupStatus(
+            err && err.message
+              ? err.message
+              : "올바른 백업 JSON 파일이 아닙니다.",
+            "error"
+          );
+        } finally {
+          backupImportInput.value = "";
+        }
+      });
+    }
+
+    renderStandaloneSettings();
+  }
+
   // 이벤트 리스너 연결
   tabFeedbackBtn.addEventListener("click", () => switchTab("feedback"));
   tabVocabBtn.addEventListener("click", () => switchTab("vocab"));
   if (tabRoutineBtn) {
     tabRoutineBtn.addEventListener("click", () => switchTab("routine"));
+  }
+  if (tabSettingsBtn) {
+    tabSettingsBtn.addEventListener("click", () => {
+      renderStandaloneSettings();
+      switchTab("settings");
+    });
   }
   if (bannerGoRoutineBtn) {
     bannerGoRoutineBtn.addEventListener("click", () => switchTab("routine"));
@@ -1301,6 +1525,7 @@
   });
 
   setupSpeechRecognition();
+  setupMobileSettingsAndPwa();
   fetchVocab();
   fetchHistory();
   fetchRoutine();

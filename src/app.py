@@ -272,9 +272,14 @@ class FeedbackApp:
             return HTTPStatus.NOT_FOUND, "application/json; charset=utf-8", err_body
 
         content_type, _ = mimetypes.guess_type(str(candidate))
-        mime = content_type or "application/octet-stream"
-        if mime.startswith("text/") or mime in ("application/javascript", "application/json"):
-            mime = f"{mime}; charset=utf-8"
+        if candidate.name.endswith(".webmanifest"):
+            mime = "application/manifest+json; charset=utf-8"
+        elif candidate.name.endswith(".svg"):
+            mime = "image/svg+xml; charset=utf-8"
+        else:
+            mime = content_type or "application/octet-stream"
+            if mime.startswith("text/") or mime in ("application/javascript", "application/json"):
+                mime = f"{mime}; charset=utf-8"
 
         return HTTPStatus.OK, mime, candidate.read_bytes()
 
