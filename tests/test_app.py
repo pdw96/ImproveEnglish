@@ -178,7 +178,7 @@ class TestSlice1Guarantees(unittest.TestCase):
         self.assertEqual(status_html, 200)
         self.assertIn("text/html", mime_html)
         self.assertIn("AI 영작·말하기 첨삭 코치", html)
-        self.assertIn("🎤 마이크로 말하기", html)
+        self.assertIn("마이크로 말하기", html)
 
         status_js, _, raw_js = self.app.handle_static("/app.js")
         self.assertEqual(status_js, 200)

@@ -104,7 +104,7 @@
     return (str || "").trim().toLowerCase();
   }
 
-  function switchTab(target) {
+  function applyTabDomState(target) {
     const isFeedback = target === "feedback";
     const isVocab = target === "vocab";
     const isRoutine = target === "routine";
@@ -122,10 +122,47 @@
     if (tabRoutineBtn) tabRoutineBtn.setAttribute("aria-selected", String(isRoutine));
   }
 
+  function focusActivePanelHeading(target) {
+    const headingId =
+      target === "vocab"
+        ? "review-heading"
+        : target === "routine"
+        ? "routine-summary-heading"
+        : "input-heading";
+    const headingEl = document.getElementById(headingId);
+    if (headingEl && typeof headingEl.focus === "function") {
+      headingEl.focus({ preventScroll: true });
+    }
+  }
+
+  function switchTab(target) {
+    const prefersReducedMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (
+      typeof document.startViewTransition === "function" &&
+      !prefersReducedMotion &&
+      !navigator.webdriver
+    ) {
+      const transition = document.startViewTransition(() => {
+        applyTabDomState(target);
+      });
+      if (transition && transition.finished) {
+        transition.finished.finally(() => {
+          focusActivePanelHeading(target);
+        });
+      }
+    } else {
+      applyTabDomState(target);
+      focusActivePanelHeading(target);
+    }
+  }
+
   function setInputMode(mode) {
     currentInputMode = mode === "voice" ? "voice" : "text";
     if (currentInputMode === "voice") {
-      modeBadge.textContent = "🎤 음성 입력 모드";
+      modeBadge.textContent = "음성 입력 모드";
       modeBadge.className = "mode-badge mode-voice";
     } else {
       modeBadge.textContent = "글자 입력 모드";
@@ -196,7 +233,7 @@
     btn.className = alreadySaved
       ? "btn-save-vocab saved"
       : "btn-save-vocab";
-    btn.textContent = alreadySaved ? "✓ 단어장에 담김" : "+ 단어장에 담기";
+    btn.textContent = alreadySaved ? "단어장에 보관됨" : "+ 단어장에 담기";
 
     btn.addEventListener("click", async () => {
       btn.disabled = true;
@@ -217,12 +254,12 @@
         }
         if (data.duplicated) {
           showVocabToast(
-            `"${expression}" 표현은 이미 단어장에 담겨 있습니다(다음 복습일: ${data.nextReviewDate}).`,
+            `"${expression}" 표현은 이미 단어장에 담겨 있습니다 (다음 복습일: ${data.nextReviewDate}).`,
             "info"
           );
         } else {
           showVocabToast(
-            `"${expression}" 표현을 내 단어장에 담았습니다!`,
+            `"${expression}" 표현을 내 단어장에 담았습니다.`,
             "info"
           );
         }
@@ -256,7 +293,7 @@
     lastRenderedRecord = record;
     const fb = record.feedback;
     resultSection.hidden = false;
-    const modeLabel = record.inputMode === "voice" ? "🎤 마이크 입력" : "⌨️ 글자 입력";
+    const modeLabel = record.inputMode === "voice" ? "음성 입력" : "글자 입력";
     resultMeta.textContent = `${modeLabel} · ${formatDate(record.createdAt)}`;
     resOriginal.textContent = record.text;
     resCorrected.textContent = fb.corrected;
@@ -292,7 +329,7 @@
 
       const nuance = document.createElement("div");
       nuance.className = "alt-nuance";
-      nuance.textContent = `💡 ${item.nuance}`;
+      nuance.textContent = item.nuance;
 
       li.appendChild(topRow);
       li.appendChild(nuance);
@@ -309,7 +346,14 @@
 
       const expr = document.createElement("div");
       expr.className = "key-expr";
-      expr.textContent = `${item.expression} — ${item.meaning}`;
+      const enSpan = document.createElement("span");
+      enSpan.className = "en-term";
+      enSpan.textContent = item.expression;
+      const koSpan = document.createElement("span");
+      koSpan.className = "ko-meaning";
+      koSpan.textContent = ` — ${item.meaning}`;
+      expr.appendChild(enSpan);
+      expr.appendChild(koSpan);
 
       const saveBtn = createSaveToVocabButton(
         item.expression,
@@ -322,7 +366,7 @@
 
       const ex = document.createElement("div");
       ex.className = "key-example";
-      ex.textContent = `예문: "${item.example}"`;
+      ex.textContent = `"${item.example}"`;
 
       li.appendChild(topRow);
       li.appendChild(ex);
@@ -349,16 +393,16 @@
 
       const top = document.createElement("div");
       top.className = "history-top";
-      const modeText = item.inputMode === "voice" ? "🎤 음성 입력" : "⌨️ 글자 입력";
+      const modeText = item.inputMode === "voice" ? "음성 입력" : "글자 입력";
       top.textContent = `${modeText} · ${formatDate(item.createdAt)}`;
 
       const orig = document.createElement("div");
       orig.className = "history-original";
-      orig.textContent = `내가 쓴 문장: ${item.text}`;
+      orig.textContent = `원문: ${item.text}`;
 
       const corr = document.createElement("div");
       corr.className = "history-corrected";
-      corr.textContent = `→ ${item.feedback ? item.feedback.corrected : ""}`;
+      corr.textContent = item.feedback ? item.feedback.corrected : "";
 
       li.appendChild(top);
       li.appendChild(orig);
@@ -394,7 +438,7 @@
   }
 
   function renderQuizCard() {
-    reviewProgress.textContent = `오늘 복습 남은 표현 ${dueItems.length}개`;
+    reviewProgress.textContent = `오늘 복습 대상 ${dueItems.length}개`;
     dueBadge.textContent = `오늘 복습 ${dueItems.length}`;
     dueBadge.className = dueItems.length > 0 ? "tab-badge has-due" : "tab-badge";
 
@@ -404,7 +448,7 @@
       if (vocabItems.length > 0) {
         if (quizEmptyText) {
           quizEmptyText.textContent =
-            "🎉 오늘 복습할 표현을 모두 마쳤습니다! 아래 전체 단어장에서 다음 복습 예정일을 확인해 보세요.";
+            "오늘 예정된 표현 복습을 모두 마쳤습니다. 아래 단어장 보관함에서 다음 복습 예정일을 확인해 보세요.";
         }
         if (quizEmptyActions) {
           quizEmptyActions.hidden = true;
@@ -412,7 +456,7 @@
       } else {
         if (quizEmptyText) {
           quizEmptyText.textContent =
-            "아직 오늘 복습할 표현이 없습니다. 첨삭 결과에서 담거나 아래 버튼으로 바로 체험해 보세요!";
+            "아직 오늘 복습할 표현이 없습니다. 첨삭 노트에서 담거나 아래 버튼으로 바로 체험해 보세요.";
         }
         if (quizEmptyActions) {
           quizEmptyActions.hidden = false;
@@ -432,7 +476,7 @@
     if (hasDistinctExample) {
       const masked = maskExpressionInExample(current.example, current.expression);
       quizHint.hidden = false;
-      quizHint.textContent = `예문 힌트: "${masked}"`;
+      quizHint.textContent = `"${masked}"`;
     } else {
       quizHint.hidden = true;
       quizHint.textContent = "";
@@ -442,18 +486,18 @@
     quizRevealBtn.hidden = false;
     quizAnswerExpr.textContent = current.expression;
     quizAnswerExample.textContent = hasDistinctExample
-      ? `예문: "${current.example}"`
+      ? `"${current.example}"`
       : "";
 
     const easyDays = getEasyNextDays(current.box);
-    ratingEasyBtn.textContent = `😊 쉬웠음 (${easyDays}일 뒤 · 7→14→30일)`;
+    ratingEasyBtn.textContent = `쉬웠음 (${easyDays}일 뒤 · 7→14→30일)`;
   }
 
   function formatBoxLabel(box) {
-    if (box >= 3) return "단계 3 (30일 주기)";
-    if (box === 2) return "단계 2 (14일 주기)";
-    if (box === 1) return "단계 1 (7일 주기)";
-    return "새 표현 (당일·1일 주기)";
+    if (box >= 3) return "단계 3 · 30일 주기";
+    if (box === 2) return "단계 2 · 14일 주기";
+    if (box === 1) return "단계 1 · 7일 주기";
+    return "새 표현 · 당일/1일 주기";
   }
 
   function renderVocabList() {
@@ -509,7 +553,7 @@
       if (item.example && normalizeExpr(item.example) !== normalizeExpr(item.expression)) {
         const exDiv = document.createElement("div");
         exDiv.className = "key-example";
-        exDiv.textContent = `예문: "${item.example}"`;
+        exDiv.textContent = `"${item.example}"`;
         li.appendChild(exDiv);
       }
 
@@ -520,8 +564,8 @@
       const dueSpan = document.createElement("span");
       dueSpan.className = isDue ? "due-tag due-now" : "due-tag";
       dueSpan.textContent = isDue
-        ? `🔥 오늘 복습 대상 (예정일: ${item.nextReviewDate})`
-        : `📅 다음 복습 예정일: ${item.nextReviewDate}`;
+        ? `오늘 복습 대상 (예정일: ${item.nextReviewDate})`
+        : `다음 복습 예정일: ${item.nextReviewDate}`;
 
       const statsSpan = document.createElement("span");
       statsSpan.className = "vocab-stats";
@@ -541,8 +585,8 @@
 
     const isToday = routineData && dayObj.date === routineData.today;
     selectedDayTitle.textContent = isToday
-      ? `📅 ${dayObj.date} (오늘) 공부 내역`
-      : `📅 ${dayObj.date} 공부 내역`;
+      ? `${dayObj.date} (오늘) 학습 기록`
+      : `${dayObj.date} 학습 기록`;
 
     selectedDaySummaryBadge.textContent = `첨삭 ${dayObj.feedbackCount}문장 · 복습 ${dayObj.reviewCount}단어`;
 
@@ -561,7 +605,7 @@
     if (feedbacks.length > 0) {
       const fbHeader = document.createElement("div");
       fbHeader.className = "day-sub-header";
-      fbHeader.textContent = `✨ AI 첨삭 문장 (${feedbacks.length}건)`;
+      fbHeader.textContent = `다듬은 문장 (${feedbacks.length}건)`;
       selectedDayContent.appendChild(fbHeader);
 
       const fbUl = document.createElement("ul");
@@ -569,9 +613,9 @@
       feedbacks.forEach((fb) => {
         const li = document.createElement("li");
         li.className = "day-detail-item";
-        li.innerHTML = `<div class="history-original">내가 쓴 문장:</div><div class="history-corrected"></div>`;
-        li.querySelector(".history-original").textContent = `내가 쓴 문장: ${fb.text}`;
-        li.querySelector(".history-corrected").textContent = `→ 교정: ${fb.corrected}`;
+        li.innerHTML = `<div class="history-original"></div><div class="history-corrected"></div>`;
+        li.querySelector(".history-original").textContent = `원문: ${fb.text}`;
+        li.querySelector(".history-corrected").textContent = fb.corrected;
         fbUl.appendChild(li);
       });
       selectedDayContent.appendChild(fbUl);
@@ -580,15 +624,15 @@
     if (reviews.length > 0) {
       const rvHeader = document.createElement("div");
       rvHeader.className = "day-sub-header";
-      rvHeader.textContent = `📚 복습 완료한 표현 (${reviews.length}건)`;
+      rvHeader.textContent = `복습한 표현 (${reviews.length}건)`;
       selectedDayContent.appendChild(rvHeader);
 
       const rvUl = document.createElement("ul");
       rvUl.className = "day-detail-list";
       const ratingLabelMap = {
-        again: "😓 몰랐음 (1일 뒤)",
-        hard: "🤔 헷갈림 (3일 뒤)",
-        easy: "😊 쉬웠음",
+        again: "몰랐음 · 1일 뒤",
+        hard: "헷갈림 · 3일 뒤",
+        easy: "쉬웠음",
       };
       reviews.forEach((rv) => {
         const li = document.createElement("li");
@@ -597,8 +641,15 @@
         exprRow.className = "item-action-row";
 
         const left = document.createElement("span");
-        left.className = "vocab-expr";
-        left.textContent = `${rv.expression} — ${rv.meaning}`;
+        left.className = "vocab-expr-wrap";
+        const en = document.createElement("span");
+        en.className = "vocab-expr";
+        en.textContent = rv.expression;
+        const ko = document.createElement("span");
+        ko.className = "vocab-meaning";
+        ko.textContent = ` — ${rv.meaning}`;
+        left.appendChild(en);
+        left.appendChild(ko);
 
         const right = document.createElement("span");
         right.className = "mode-badge mode-text";
@@ -630,7 +681,7 @@
 
     // 1) 상단 루틴 배너 업데이트
     if (bannerStreakPill) {
-      bannerStreakPill.textContent = `🔥 연속 ${data.currentStreak}일째`;
+      bannerStreakPill.textContent = `연속 ${data.currentStreak}일째`;
       bannerStreakPill.className =
         data.currentStreak > 0 ? "streak-pill active" : "streak-pill";
     }
@@ -640,17 +691,17 @@
         data.currentStreak > 0 ? "tab-badge has-due" : "tab-badge";
     }
     if (bannerProgressText) {
-      bannerProgressText.textContent = `오늘의 목표: 첨삭 ${todayInfo.feedbackCount}/${goal.dailyFeedbackGoal}문장 · 단어 복습 ${todayInfo.reviewCount}/${goal.dailyReviewGoal}개 (${todayInfo.progressPercent}%)`;
+      bannerProgressText.textContent = `오늘의 목표 · 첨삭 ${todayInfo.feedbackCount}/${goal.dailyFeedbackGoal}문장 · 단어 복습 ${todayInfo.reviewCount}/${goal.dailyReviewGoal}개 (${todayInfo.progressPercent}%)`;
     }
     if (bannerProgressBar) {
       bannerProgressBar.style.width = `${Math.min(100, todayInfo.progressPercent || 0)}%`;
     }
     if (bannerStatusBadge) {
       if (todayInfo.goalMet) {
-        bannerStatusBadge.textContent = "🎉 오늘 목표 100% 달성!";
+        bannerStatusBadge.textContent = "오늘 목표 100% 달성";
         bannerStatusBadge.className = "routine-state-badge goal-met";
       } else if (todayInfo.studied) {
-        bannerStatusBadge.textContent = "✅ 오늘 출석 완료 (연속 학습 유지)";
+        bannerStatusBadge.textContent = "오늘 출석 완료 · 연속 학습 유지";
         bannerStatusBadge.className = "routine-state-badge studied";
       } else {
         bannerStatusBadge.textContent = "오늘 첫 학습을 시작해 보세요";
@@ -694,18 +745,18 @@
         const cell = document.createElement("button");
         cell.type = "button";
         let stateClass = "cal-day-empty";
-        let statusIcon = "·";
+        let statusIcon = "—";
         if (dayItem.goalMet) {
           stateClass = "cal-day-goal";
-          statusIcon = "🎉";
+          statusIcon = "★ 목표 달성";
         } else if (dayItem.studied) {
           stateClass = "cal-day-studied";
-          statusIcon = "✅";
+          statusIcon = "✓ 학습 완료";
         }
         const isSelected = selectedObj && dayItem.date === selectedObj.date;
         cell.className = `cal-day-cell ${stateClass}${isSelected ? " selected" : ""}`;
 
-        const shortDate = dayItem.date.slice(5).replace("-", "/");
+        const shortDate = dayItem.date.slice(5).replace("-", ".");
         cell.innerHTML = `
           <span class="cal-date-label">${shortDate}</span>
           <span class="cal-status-icon">${statusIcon}</span>
@@ -741,7 +792,7 @@
       showGoalStatus("하루 목표 첨삭 문장 수는 1~20 사이의 숫자로 입력해 주세요.", "error");
       return;
     }
-    if (Number.isNaN(rvGoal) || rvGoal < 1 || rvGoal > 50) {
+    if (Number.isNaN(rvGoal) || Number.isNaN(rvGoal) || rvGoal < 1 || rvGoal > 50) {
       showGoalStatus("하루 목표 단어 복습 수는 1~50 사이의 숫자로 입력해 주세요.", "error");
       return;
     }
@@ -763,7 +814,7 @@
       }
       renderRoutine(data);
       showGoalStatus(
-        `하루 학습 목표(첨삭 ${fbGoal}문장 · 복습 ${rvGoal}단어)가 저장되었습니다!`,
+        `하루 학습 목표(첨삭 ${fbGoal}문장 · 복습 ${rvGoal}단어)가 저장되었습니다.`,
         "info"
       );
     } catch (_) {
@@ -803,7 +854,7 @@
       return;
     }
     if (!meaning) {
-      showVocabFormStatus("영어 표현의 한국어 뜻을 입력해 주세요.", "error");
+      showVocabFormStatus("영어 표현의 우리말 뜻을 입력해 주세요.", "error");
       return;
     }
 
@@ -826,7 +877,7 @@
 
       if (data.duplicated) {
         showVocabFormStatus(
-          `"${data.expression}" 표현은 이미 단어장에 등록되어 있습니다(다음 복습 예정일: ${data.nextReviewDate}).`,
+          `"${data.expression}" 표현은 이미 단어장에 등록되어 있습니다 (다음 복습 예정일: ${data.nextReviewDate}).`,
           "info"
         );
       } else {
@@ -834,7 +885,7 @@
         vocabMeaningInput.value = "";
         vocabExampleInput.value = "";
         showVocabFormStatus(
-          `"${data.expression}" 표현이 단어장에 추가되었습니다! 위 복습 카드에서 바로 학습할 수 있습니다.`,
+          `"${data.expression}" 표현이 단어장에 추가되었습니다. 위 복습 카드에서 바로 학습할 수 있습니다.`,
           "info"
         );
       }
@@ -906,7 +957,7 @@
 
     submitBtn.disabled = true;
     vocabToast.hidden = true;
-    showStatus("AI 코치가 문장을 분석하고 자연스러운 표현을 정리하고 있습니다...", "info");
+    showStatus("문장을 읽고 자연스러운 영어 표현을 정리하고 있습니다...", "info");
 
     try {
       const res = await fetch("/api/feedback", {
@@ -952,7 +1003,7 @@
 
     recognition.addEventListener("start", () => {
       isRecording = true;
-      voiceBtn.textContent = "⏹️ 말하기 종료";
+      voiceBtn.textContent = "말하기 종료";
       voiceBtn.classList.add("recording");
       showStatus("영어로 말씀해 주세요. 말씀을 마치면 자동으로 입력창에 들어갑니다...", "info");
     });
@@ -964,7 +1015,7 @@
         : transcript;
       setInputMode("voice");
       updateCounter();
-      showStatus("음성이 글자로 입력되었습니다. 내용을 확인한 뒤 [AI 첨삭받기]를 눌러주세요.", "info");
+      showStatus("음성이 글자로 입력되었습니다. 내용을 확인한 뒤 [문장 첨삭받기]를 눌러주세요.", "info");
     });
 
     recognition.addEventListener("error", () => {
@@ -973,7 +1024,7 @@
 
     recognition.addEventListener("end", () => {
       isRecording = false;
-      voiceBtn.textContent = "🎤 마이크로 말하기";
+      voiceBtn.textContent = "마이크로 말하기";
       voiceBtn.classList.remove("recording");
     });
 
@@ -1065,8 +1116,7 @@
   });
 
   setupSpeechRecognition();
-  updateCounter();
-  fetchHistory();
   fetchVocab();
+  fetchHistory();
   fetchRoutine();
 })();

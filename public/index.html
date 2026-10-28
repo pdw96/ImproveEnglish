@@ -3,27 +3,29 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ImproveEnglish — AI 영작·말하기 첨삭 · 단어장 복습 · 학습 루틴</title>
+  <title>ImproveEnglish — AI 영작·말하기 첨삭 코치</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <div class="container">
     <header class="app-header">
-      <div>
-        <span class="badge-brand">ImproveEnglish · 조각 1·2·3 통합</span>
-        <h1>AI 영작·말하기 첨삭 코치</h1>
-        <p class="subtitle">
-          영어 문장을 첨삭받고, 외우고 싶은 표현을 단어장에 담아 복습 주기에 맞춰 학습하며 매일의 연속 학습 루틴을 이어가세요.
-        </p>
+      <div class="masthead-top">
+        <div class="masthead-brand">
+          <span class="eyebrow">IMPROVE ENGLISH · PERSONAL STUDY NOTE</span>
+          <h1>AI 영작·말하기 첨삭 코치</h1>
+          <p class="subtitle">
+            내가 쓴 영어 문장을 자연스러운 표현으로 다듬고, 기억해 둘 문장과 단어를 노트에 모아 복습 주기에 맞춰 익힙니다.
+          </p>
+        </div>
       </div>
 
-      <!-- 상단 연속 학습 루틴 & 오늘의 목표 배너 (항상 표시) -->
+      <!-- 상단 연속 학습 루틴 & 오늘의 목표 요약 바 -->
       <div id="routine-banner" class="routine-banner" aria-label="오늘의 학습 루틴 현황">
         <div class="routine-banner-left">
-          <span id="banner-streak-pill" class="streak-pill">🔥 연속 0일째</span>
+          <span id="banner-streak-pill" class="streak-pill">연속 0일째</span>
           <div class="routine-banner-info">
             <div class="routine-banner-title-row">
-              <strong id="banner-progress-text">오늘의 목표: 첨삭 0/1문장 · 단어 복습 0/3개</strong>
+              <strong id="banner-progress-text">오늘의 목표 · 첨삭 0/1문장 · 단어 복습 0/3개</strong>
               <span id="banner-status-badge" class="routine-state-badge">오늘 첫 학습을 시작해 보세요</span>
             </div>
             <div class="progress-track" aria-hidden="true">
@@ -32,7 +34,7 @@
           </div>
         </div>
         <button type="button" id="banner-go-routine-btn" class="btn-banner-link">
-          루틴·기록 보기 →
+          루틴·기록 열기 →
         </button>
       </div>
 
@@ -45,7 +47,7 @@
           aria-selected="true"
           aria-controls="panel-feedback"
         >
-          ✨ AI 영작·말하기 첨삭
+          영작·말하기 첨삭
         </button>
         <button
           type="button"
@@ -54,7 +56,7 @@
           aria-selected="false"
           aria-controls="panel-vocab"
         >
-          📚 내 단어장 · 오늘의 복습
+          내 단어장 · 오늘의 복습
           <span id="due-badge" class="tab-badge">오늘 복습 0</span>
         </button>
         <button
@@ -64,7 +66,7 @@
           aria-selected="false"
           aria-controls="panel-routine"
         >
-          🔥 내 학습 루틴 · 기록
+          내 학습 루틴 · 기록
           <span id="routine-tab-badge" class="tab-badge">0일 연속</span>
         </button>
       </nav>
@@ -75,17 +77,17 @@
       <!-- 입력 섹션 -->
       <section class="card input-card" aria-labelledby="input-heading">
         <div class="card-header-row">
-          <h2 id="input-heading">1. 문장 입력하기</h2>
+          <h2 id="input-heading" tabindex="-1"><span class="sec-num">01</span> 문장 다듬기</h2>
           <span id="input-mode-badge" class="mode-badge mode-text">글자 입력 모드</span>
         </div>
 
         <div class="sample-chips">
-          <span class="sample-label">예시 눌러보기:</span>
+          <span class="sample-label">예문 불러오기</span>
           <button type="button" class="chip-btn" data-sample="I want to 퇴근하다 early today because 몸이 안 좋다.">
-            "I want to 퇴근하다 early today..."
+            I want to 퇴근하다 early today...
           </button>
           <button type="button" class="chip-btn" data-sample="Can we 미루다 our meeting to tomorrow afternoon?">
-            "Can we 미루다 our meeting..."
+            Can we 미루다 our meeting...
           </button>
         </div>
 
@@ -94,17 +96,17 @@
           id="sentence-input"
           rows="4"
           maxlength="1000"
-          placeholder="예: I want to 퇴근하다 early today. 또는 마이크 버튼을 눌러 영어로 말해 보세요."
+          placeholder="영어로 떠오르는 대로 적어 보세요. 모르는 단어는 한국어로 섞어 적으셔도 자연스러운 영어 문장으로 다듬어 드립니다."
         ></textarea>
 
         <div class="input-footer">
           <span id="char-counter" class="char-counter">0 / 1,000자</span>
           <div class="action-buttons">
             <button type="button" id="voice-btn" class="btn btn-secondary">
-              🎤 마이크로 말하기
+              마이크로 말하기
             </button>
             <button type="button" id="submit-btn" class="btn btn-primary">
-              ✨ AI 첨삭받기
+              문장 첨삭받기
             </button>
           </div>
         </div>
@@ -115,14 +117,14 @@
       <!-- 3단 첨삭 결과 섹션 -->
       <section id="result-section" class="result-section" aria-labelledby="result-heading" hidden>
         <div class="section-title-row">
-          <h2 id="result-heading">2. AI 3단 첨삭 결과</h2>
+          <h2 id="result-heading"><span class="sec-num">02</span> 첨삭 노트</h2>
           <span id="result-meta" class="result-meta"></span>
         </div>
 
         <div id="vocab-toast" class="status-msg info toast-bar" role="status" aria-live="polite" hidden>
           <span id="vocab-toast-text"></span>
           <button type="button" id="vocab-toast-go-btn" class="btn-inline-link">
-            📚 오늘의 복습 카드로 이동 →
+            오늘의 복습 카드로 이동 →
           </button>
         </div>
 
@@ -130,12 +132,12 @@
           <!-- ① 교정 및 이유 -->
           <article class="card result-card highlight-card">
             <div class="item-action-row">
-              <div class="step-tag">① 교정 문장 및 이유</div>
+              <div class="step-tag">CORRECTION · 교정 문장 및 해설</div>
               <div id="res-corrected-save-wrap"></div>
             </div>
             <p class="original-line">
-              <span class="label">내가 쓴 문장:</span>
-              <span id="res-original"></span>
+              <span class="label">내가 쓴 문장</span>
+              <span id="res-original" class="en-inline"></span>
             </p>
             <div class="corrected-box">
               <p id="res-corrected" class="corrected-text"></p>
@@ -145,30 +147,30 @@
 
           <!-- ② 원어민 자연스러운 추천 표현 2~3가지 -->
           <article class="card result-card">
-            <div class="step-tag">② 원어민이 자주 쓰는 자연스러운 표현 (2~3가지)</div>
+            <div class="step-tag">ALTERNATIVES · 상황에 맞는 자연스러운 표현</div>
             <ul id="res-alternatives" class="alternatives-list"></ul>
           </article>
 
           <!-- ③ 외워두면 좋은 핵심 단어·표현 요약 -->
           <article class="card result-card">
-            <div class="step-tag">③ 외워두면 좋은 핵심 단어·표현 요약</div>
+            <div class="step-tag">KEY EXPRESSIONS · 기억해 둘 핵심 표현</div>
             <ul id="res-keys" class="keys-list"></ul>
           </article>
         </div>
       </section>
 
-      <!-- 내 PC에 자동 저장된 이전 첨삭 기록 -->
+      <!-- 이전 첨삭 기록 -->
       <section class="card history-card" aria-labelledby="history-heading">
         <div class="card-header-row">
-          <h2 id="history-heading">3. 내 이전 첨삭 기록 (자동 저장)</h2>
+          <h2 id="history-heading"><span class="sec-num">03</span> 지난 첨삭 기록</h2>
           <span id="history-count" class="count-pill">0건</span>
         </div>
         <p class="history-guide">
-          첨삭받은 내역은 내 PC(<code>data/feedback-history.json</code>)에 자동 보관됩니다. 항목을 누르면 위에서 다시 볼 수 있습니다.
+          지금까지 첨삭받은 문장들이 자동으로 기록됩니다. 문장을 누르면 위 첨삭 노트에 다시 펼쳐집니다.
         </p>
         <ul id="history-list" class="history-list"></ul>
         <p id="history-empty" class="empty-state">
-          아직 저장된 첨삭 기록이 없습니다. 첫 문장을 입력해 첨삭을 받아보세요!
+          아직 기록된 첨삭 노트가 없습니다. 첫 문장을 입력해 보세요.
         </p>
       </section>
     </main>
@@ -178,44 +180,44 @@
       <!-- 오늘의 복습 카드 섹션 -->
       <section class="card review-card" aria-labelledby="review-heading">
         <div class="card-header-row">
-          <h2 id="review-heading">1. 오늘 복습할 표현 카드</h2>
+          <h2 id="review-heading" tabindex="-1"><span class="sec-num">01</span> 오늘 복습할 표현 카드</h2>
           <span id="review-progress" class="count-pill">오늘 복습 대상 0개</span>
         </div>
         <p class="history-guide">
-          한국어 뜻을 보고 먼저 영어 표현을 떠올려 본 뒤 <strong>[정답 보기]</strong>를 눌러 기억 난이도를 선택하세요.
+          우리말 뜻과 빈칸 예문을 보고 영어 표현을 먼저 떠올려 본 뒤, <strong>정답 보기</strong>를 눌러 다음 복습 주기를 정하세요.
         </p>
 
         <!-- 복습할 카드가 있을 때 -->
         <div id="quiz-box" class="quiz-box" hidden>
           <div class="quiz-question">
-            <span class="quiz-label">뜻 · 뉘앙스</span>
+            <span class="quiz-label">MEANING · 뜻과 뉘앙스</span>
             <p id="quiz-meaning" class="quiz-meaning-text"></p>
             <p id="quiz-hint" class="quiz-hint-text" hidden></p>
           </div>
 
           <div class="quiz-reveal-row">
             <button type="button" id="quiz-reveal-btn" class="btn btn-primary">
-              👀 정답 보기
+              정답 보기
             </button>
           </div>
 
           <div id="quiz-answer-area" class="quiz-answer-area" hidden>
             <div class="corrected-box">
-              <span class="quiz-label">정답 영어 표현</span>
+              <span class="quiz-label">ANSWER · 정답 영어 표현</span>
               <p id="quiz-answer-expr" class="corrected-text"></p>
               <p id="quiz-answer-example" class="quiz-example-text"></p>
             </div>
 
-            <p class="rating-guide">얼마나 잘 떠올랐나요? 선택하면 다음 복습 날짜가 자동 예약됩니다.</p>
+            <p class="rating-guide">얼마나 자연스럽게 떠올랐나요? 선택에 따라 다음 복습일이 예약됩니다.</p>
             <div class="rating-buttons">
               <button type="button" class="btn rating-btn rating-again" data-rating="again">
-                😓 몰랐음 (1일 뒤)
+                몰랐음 (1일 뒤)
               </button>
               <button type="button" class="btn rating-btn rating-hard" data-rating="hard">
-                🤔 헷갈림 (3일 뒤)
+                헷갈림 (3일 뒤)
               </button>
               <button type="button" id="rating-easy-btn" class="btn rating-btn rating-easy" data-rating="easy">
-                😊 쉬웠음 (7일→14일→30일 뒤)
+                쉬웠음 (7일→14일→30일 뒤)
               </button>
             </div>
           </div>
@@ -224,14 +226,14 @@
         <!-- 복습할 카드가 없을 때 -->
         <div id="quiz-empty" class="empty-state">
           <p id="quiz-empty-text">
-            오늘 복습할 표현이 없습니다. 첨삭 결과에서 표현을 담거나 아래 버튼을 눌러보세요!
+            오늘 복습할 표현이 없습니다. 첨삭 노트에서 표현을 담거나 아래에서 직접 추가해 보세요.
           </p>
           <div id="quiz-empty-actions" class="empty-actions">
             <button type="button" id="go-feedback-from-empty-btn" class="btn btn-secondary">
-              ✨ 첨삭 결과에서 표현 담기
+              첨삭 노트에서 표현 담기
             </button>
             <button type="button" id="quick-sample-vocab-btn" class="btn btn-primary">
-              + 예시 표현("get off work") 바로 담아 복습 체험하기
+              예시 표현("get off work") 담아 복습 해보기
             </button>
           </div>
         </div>
@@ -240,7 +242,7 @@
       <!-- 직접 단어 추가 섹션 -->
       <section class="card vocab-form-card" aria-labelledby="vocab-add-heading">
         <div class="card-header-row">
-          <h2 id="vocab-add-heading">2. 외우고 싶은 표현 직접 추가하기</h2>
+          <h2 id="vocab-add-heading"><span class="sec-num">02</span> 새 표현 직접 적어두기</h2>
           <span class="mode-badge mode-text">오늘 바로 복습 가능</span>
         </div>
 
@@ -255,7 +257,7 @@
             />
           </div>
           <div class="form-field">
-            <label for="vocab-meaning-input">한국어 뜻 · 뉘앙스 (필수, 최대 300자)</label>
+            <label for="vocab-meaning-input">우리말 뜻 · 뉘앙스 (필수, 최대 300자)</label>
             <input
               type="text"
               id="vocab-meaning-input"
@@ -264,7 +266,7 @@
             />
           </div>
           <div class="form-field form-field-full">
-            <label for="vocab-example-input">영어 예문 (선택, 최대 500자)</label>
+            <label for="vocab-example-input">함께 기억할 영어 예문 (선택, 최대 500자)</label>
             <input
               type="text"
               id="vocab-example-input"
@@ -275,7 +277,7 @@
         </div>
 
         <div class="input-footer">
-          <span class="char-counter">중복된 영어 표현은 자동으로 안내됩니다.</span>
+          <span class="char-counter">이미 담아 둔 영어 표현은 중복 저장되지 않고 안내됩니다.</span>
           <button type="button" id="vocab-add-btn" class="btn btn-primary">
             + 단어장에 추가
           </button>
@@ -287,15 +289,15 @@
       <!-- 전체 단어장 목록 섹션 -->
       <section class="card vocab-list-card" aria-labelledby="vocab-list-heading">
         <div class="card-header-row">
-          <h2 id="vocab-list-heading">3. 내 전체 단어장 목록</h2>
+          <h2 id="vocab-list-heading"><span class="sec-num">03</span> 내 단어장 보관함</h2>
           <span id="vocab-total-count" class="count-pill">총 0개</span>
         </div>
         <p class="history-guide">
-          내 PC(<code>data/vocab-items.json</code>)에 안전하게 저장된 단어장입니다. 각 표현의 복습 횟수와 다음 복습 예정일을 확인할 수 있습니다.
+          내가 담아 둔 모든 표현과 현재 복습 단계, 다음 복습 예정일을 한눈에 관리합니다.
         </p>
         <ul id="vocab-list" class="vocab-list"></ul>
         <p id="vocab-empty" class="empty-state">
-          아직 저장된 단어·표현이 없습니다.
+          아직 보관된 단어·표현이 없습니다.
         </p>
       </section>
     </section>
@@ -305,24 +307,24 @@
       <!-- ① 연속 학습 통계 카드 -->
       <section class="card routine-summary-card" aria-labelledby="routine-summary-heading">
         <div class="card-header-row">
-          <h2 id="routine-summary-heading">1. 내 연속 학습 루틴 현황</h2>
+          <h2 id="routine-summary-heading" tabindex="-1"><span class="sec-num">01</span> 내 연속 학습 루틴 현황</h2>
           <span id="routine-today-badge" class="count-pill">기준일: -</span>
         </div>
         <p class="history-guide">
-          AI 첨삭 1회 이상 또는 단어 복습 1회 이상 학습하면 <strong>오늘의 연속 학습일(🔥 출석)</strong>이 자동으로 이어집니다.
+          하루에 문장 첨삭 1회 또는 단어 복습 1회만 완료해도 그날의 학습 기록이 남아 연속 학습일이 이어집니다.
         </p>
 
         <div class="streak-stats-grid">
           <div class="stat-box highlight-stat">
-            <span class="stat-label">🔥 현재 연속 학습일</span>
+            <span class="stat-label">현재 연속 학습일</span>
             <strong id="stat-current-streak" class="stat-value">0일째</strong>
           </div>
           <div class="stat-box">
-            <span class="stat-label">🏆 최장 연속 기록</span>
+            <span class="stat-label">최장 연속 기록</span>
             <strong id="stat-longest-streak" class="stat-value">0일</strong>
           </div>
           <div class="stat-box">
-            <span class="stat-label">📅 누적 학습일</span>
+            <span class="stat-label">누적 학습일</span>
             <strong id="stat-total-days" class="stat-value">총 0일</strong>
           </div>
         </div>
@@ -331,15 +333,15 @@
       <!-- ② 최근 14일 학습 달력(잔디) 및 날짜별 공부 내역 -->
       <section class="card routine-calendar-card" aria-labelledby="routine-cal-heading">
         <div class="card-header-row">
-          <h2 id="routine-cal-heading">2. 최근 14일 학습 달력 및 날짜별 공부 내역</h2>
+          <h2 id="routine-cal-heading"><span class="sec-num">02</span> 최근 14일 학습 달력 및 날짜별 공부 내역</h2>
           <div class="calendar-legend">
             <span class="legend-item"><i class="dot dot-empty"></i> 미학습</span>
-            <span class="legend-item"><i class="dot dot-studied"></i> 출석 완료</span>
-            <span class="legend-item"><i class="dot dot-goal"></i> 목표 100% 달성</span>
+            <span class="legend-item"><i class="dot dot-studied"></i> 학습 완료</span>
+            <span class="legend-item"><i class="dot dot-goal"></i> 일일 목표 달성</span>
           </div>
         </div>
         <p class="history-guide">
-          날짜 칸을 누르면 그날 첨삭받은 영어 문장과 복습한 단어 내역을 아래에서 자세히 볼 수 있습니다.
+          날짜 칸을 선택하면 그날 다듬은 영어 문장과 복습한 표현들을 아래에서 다시 펼쳐 볼 수 있습니다.
         </p>
 
         <div id="routine-calendar-grid" class="calendar-grid"></div>
@@ -357,11 +359,11 @@
       <!-- ③ 하루 학습 목표 설정 -->
       <section class="card routine-goal-card" aria-labelledby="routine-goal-heading">
         <div class="card-header-row">
-          <h2 id="routine-goal-heading">3. 내 하루 학습 목표 설정</h2>
-          <span class="mode-badge mode-text">내 PC에 자동 저장</span>
+          <h2 id="routine-goal-heading"><span class="sec-num">03</span> 내 하루 학습 목표 설정</h2>
+          <span class="mode-badge mode-text">자동 보관</span>
         </div>
         <p class="history-guide">
-          하루 목표를 모두 채우면 달력에 <strong>🎉 목표 100% 달성</strong>으로 기록됩니다(출석은 첨삭 또는 복습 1회만 해도 인정됩니다).
+          부담 없이 매일 이어갈 수 있는 하루 학습 목표를 정해 보세요. 설정한 두 목표를 모두 채운 날은 달력에 <strong>목표 달성(★)</strong>으로 기록됩니다.
         </p>
 
         <div class="vocab-form-grid">
@@ -376,7 +378,7 @@
         </div>
 
         <div class="input-footer">
-          <span class="char-counter">설정한 목표는 즉시 오늘 진행률에 반영됩니다.</span>
+          <span class="char-counter">변경한 목표는 오늘의 진행률과 달력에 즉시 반영됩니다.</span>
           <button type="button" id="goal-save-btn" class="btn btn-primary">
             목표 저장하기
           </button>
