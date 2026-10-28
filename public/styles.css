@@ -202,7 +202,8 @@ body {
 }
 
 textarea,
-input[type="text"] {
+input[type="text"],
+input[type="number"] {
   width: 100%;
   padding: 12px 14px;
   font-size: 0.98rem;
@@ -216,7 +217,8 @@ textarea {
 }
 
 textarea:focus,
-input[type="text"]:focus {
+input[type="text"]:focus,
+input[type="number"]:focus {
   outline: 2px solid var(--primary);
   border-color: transparent;
 }
@@ -698,4 +700,283 @@ input[type="text"]:focus {
   height: 1px;
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
+}
+
+/* 조각 3: 상단 연속 학습 배너 */
+.routine-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--accent-border);
+  border-radius: 14px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.05);
+}
+
+.routine-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 260px;
+}
+
+.streak-pill {
+  flex-shrink: 0;
+  font-size: 0.92rem;
+  font-weight: 800;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid var(--border);
+}
+
+.streak-pill.active {
+  background: #fff7ed;
+  color: #c2410c;
+  border-color: #fed7aa;
+}
+
+.routine-banner-info {
+  flex: 1;
+}
+
+.routine-banner-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.9rem;
+  margin-bottom: 6px;
+}
+
+.routine-state-badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: var(--muted);
+}
+
+.routine-state-badge.studied {
+  background: var(--accent-bg);
+  color: var(--primary);
+}
+
+.routine-state-badge.goal-met {
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+.progress-track {
+  width: 100%;
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #10b981);
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.btn-banner-link {
+  flex-shrink: 0;
+  background: var(--accent-bg);
+  color: var(--primary);
+  border: 1px solid var(--accent-border);
+  border-radius: 9px;
+  padding: 7px 13px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-banner-link:hover {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+/* 조각 3: 연속 학습 3대 통계 카드 */
+.streak-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.stat-box {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.stat-box.highlight-stat {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.stat-label {
+  display: block;
+  font-size: 0.84rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.stat-box.highlight-stat .stat-value {
+  color: #c2410c;
+}
+
+/* 조각 3: 최근 14일 달력(잔디) */
+.calendar-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.dot-empty {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+}
+
+.dot-studied {
+  background: #dbeafe;
+  border: 1px solid #93c5fd;
+}
+
+.dot-goal {
+  background: #d1fae5;
+  border: 1px solid #6ee7b7;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+@media (max-width: 680px) {
+  .streak-stats-grid {
+    grid-template-columns: 1fr;
+  }
+  .calendar-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.cal-day-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 10px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.cal-day-empty {
+  background: #f8fafc;
+  color: var(--muted);
+}
+
+.cal-day-studied {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: #1e3a8a;
+}
+
+.cal-day-goal {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: var(--success-text);
+}
+
+.cal-day-cell.selected {
+  outline: 2px solid var(--primary);
+  transform: translateY(-1px);
+}
+
+.cal-date-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.cal-status-icon {
+  font-size: 1.05rem;
+}
+
+.cal-counts {
+  font-size: 0.72rem;
+  opacity: 0.9;
+}
+
+/* 선택한 날짜 상세 공부 내역 */
+.selected-day-box {
+  border-top: 1px dashed var(--border);
+  padding-top: 16px;
+}
+
+.selected-day-title {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
+.day-sub-header {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin: 10px 0 6px;
+}
+
+.day-detail-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.day-detail-item {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 12px;
 }

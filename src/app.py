@@ -1,4 +1,4 @@
-"""첨삭(POST /api/feedback, GET /api/history)과 단어장·복습(GET/POST /api/vocab, POST /api/vocab/review, DELETE /api/vocab/<id>) 및 정적 웹 화면을 제공하는 로컬 서버."""
+"""첨삭(POST /api/feedback, GET /api/history), 단어장·복습(GET/POST /api/vocab, POST /api/vocab/review, DELETE /api/vocab/<id>), 학습 루틴(GET /api/routine, POST /api/routine/goal) 및 정적 웹 화면을 제공하는 로컬 서버."""
 
 from __future__ import annotations
 
@@ -22,6 +22,8 @@ from src.feedback_types import (
 )
 from src.gemini import GeminiServiceError, generate_feedback, load_dotenv_file
 from src.history_store import HistoryStore
+from src.routine_store import RoutineStore
+from src.routine_types import DailyGoal
 from src.vocab_store import VocabStore
 from src.vocab_types import VocabCreateRequest, VocabReviewRequest
 
@@ -38,9 +40,11 @@ class FeedbackApp:
         ai_fn: Callable[[FeedbackRequest], FeedbackResponse] | None = None,
         public_dir: pathlib.Path | None = None,
         vocab_store: VocabStore | None = None,
+        routine_store: RoutineStore | None = None,
     ) -> None:
         self.store = store or HistoryStore()
         self.vocab_store = vocab_store or VocabStore()
+        self.routine_store = routine_store or RoutineStore()
         self._custom_ai_fn = ai_fn
         self.public_dir = public_dir or PUBLIC_DIR
 
@@ -148,7 +152,7 @@ class FeedbackApp:
     def handle_post_vocab_review(
         self, raw_body: bytes, today: date | None = None
     ) -> tuple[int, dict[str, object]]:
-        """복습 난이도(again / hard / easy) 평가를 반영해 다음 복습 예정일을 갱신한다([V2], [V3])."""
+        """복습 난이도(again / hard / easy) 평가를 반영해 다음 복습 예정일과 오늘의 학습 루틴 기록을 갱신한다([V2], [V3], [R2])."""
         payload, err = self._parse_json_body(raw_body)
         if err is not None:
             return err
@@ -163,6 +167,8 @@ class FeedbackApp:
             return HTTPStatus.NOT_FOUND, {
                 "error": "해당 단어장 항목을 찾을 수 없습니다."
             }
+
+        self.routine_store.record_review(updated, req.rating, today=today)
 
         item_dict = updated.to_dict()
         return HTTPStatus.OK, {
@@ -187,6 +193,45 @@ class FeedbackApp:
         return HTTPStatus.OK, {
             "deletedId": item_id.strip(),
             "message": "단어장 항목이 삭제되었습니다.",
+        }
+
+    def handle_get_routine(
+        self, today: date | None = None
+    ) -> tuple[int, dict[str, object]]:
+        """연속 학습일(스트릭), 오늘 목표 진행률, 최근 14일 달력 및 날짜별 학습 내역을 반환한다([R2], [R3])."""
+        records = self.store.list_records()
+        vocab_items = self.vocab_store.list_items()
+        summary = self.routine_store.build_routine_summary(
+            feedback_records=records,
+            vocab_items=vocab_items,
+            today=today,
+        )
+        return HTTPStatus.OK, summary
+
+    def handle_post_routine_goal(
+        self, raw_body: bytes, today: date | None = None
+    ) -> tuple[int, dict[str, object]]:
+        """하루 학습 목표(첨삭 문장 수·복습 단어 수)를 검증·저장하고 갱신된 루틴 현황을 반환한다([R1], [R3])."""
+        payload, err = self._parse_json_body(raw_body)
+        if err is not None:
+            return err
+
+        try:
+            goal = DailyGoal.from_dict(payload)
+        except ValidationError as exc:
+            return HTTPStatus.BAD_REQUEST, {"error": str(exc)}
+
+        self.routine_store.save_goal(goal)
+        records = self.store.list_records()
+        vocab_items = self.vocab_store.list_items()
+        summary = self.routine_store.build_routine_summary(
+            feedback_records=records,
+            vocab_items=vocab_items,
+            today=today,
+        )
+        return HTTPStatus.OK, {
+            **summary,
+            "message": "하루 학습 목표가 저장되었습니다.",
         }
 
     def handle_static(self, url_path: str) -> tuple[int, str, bytes]:
@@ -237,6 +282,10 @@ def create_http_server(
                 status, data = active_app.handle_get_vocab()
                 self._send_json(status, data)
                 return
+            if parsed.path == "/api/routine":
+                status, data = active_app.handle_get_routine()
+                self._send_json(status, data)
+                return
             if parsed.path.startswith("/api/"):
                 self._send_json(
                     HTTPStatus.NOT_FOUND,
@@ -260,6 +309,10 @@ def create_http_server(
                 return
             if parsed.path == "/api/vocab/review":
                 status, data = active_app.handle_post_vocab_review(raw_body)
+                self._send_json(status, data)
+                return
+            if parsed.path == "/api/routine/goal":
+                status, data = active_app.handle_post_routine_goal(raw_body)
                 self._send_json(status, data)
                 return
 
@@ -286,6 +339,7 @@ def create_http_server(
             status, mime, body = active_app.handle_static(url_path)
             self.send_response(status)
             self.send_header("Content-Type", mime)
+            self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -294,6 +348,7 @@ def create_http_server(
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)

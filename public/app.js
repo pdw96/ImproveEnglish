@@ -1,18 +1,27 @@
 /**
- * ImproveEnglish 조각 1(ai-feedback) & 조각 2(vocab-review) 브라우저 화면 제어 스크립트.
- * - 상단 탭 전환 (AI 영작·말하기 첨삭 / 내 단어장 · 오늘의 복습)
- * - 글자 입력 및 마이크(Web Speech API) 음성 입력 전환
- * - POST /api/feedback 호출 및 3단 첨삭 카드 렌더링 + [+ 단어장에 담기] 원클릭 저장
+ * ImproveEnglish 조각 1(ai-feedback) · 조각 2(vocab-review) · 조각 3(study-routine) 브라우저 화면 제어 스크립트.
+ * - 상단 연속 학습 루틴 배너 및 3단 탭 전환 (첨삭 / 단어장·복습 / 학습 루틴·기록)
+ * - POST /api/feedback, GET /api/history 연동
  * - GET/POST /api/vocab, POST /api/vocab/review, DELETE /api/vocab/<id> 연동
+ * - GET /api/routine, POST /api/routine/goal 연동 및 최근 14일 달력·날짜별 내역 표시
  */
 
 (function () {
-  // 탭 요소
+  // 탭 및 상단 배너 요소
   const tabFeedbackBtn = document.getElementById("tab-feedback-btn");
   const tabVocabBtn = document.getElementById("tab-vocab-btn");
+  const tabRoutineBtn = document.getElementById("tab-routine-btn");
   const panelFeedback = document.getElementById("panel-feedback");
   const panelVocab = document.getElementById("panel-vocab");
+  const panelRoutine = document.getElementById("panel-routine");
   const dueBadge = document.getElementById("due-badge");
+  const routineTabBadge = document.getElementById("routine-tab-badge");
+
+  const bannerStreakPill = document.getElementById("banner-streak-pill");
+  const bannerProgressText = document.getElementById("banner-progress-text");
+  const bannerStatusBadge = document.getElementById("banner-status-badge");
+  const bannerProgressBar = document.getElementById("banner-progress-bar");
+  const bannerGoRoutineBtn = document.getElementById("banner-go-routine-btn");
 
   // 조각 1: 첨삭 입력·결과·기록 요소
   const sentenceInput = document.getElementById("sentence-input");
@@ -64,6 +73,20 @@
   const vocabList = document.getElementById("vocab-list");
   const vocabEmpty = document.getElementById("vocab-empty");
 
+  // 조각 3: 학습 루틴·달력·목표 설정 요소
+  const routineTodayBadge = document.getElementById("routine-today-badge");
+  const statCurrentStreak = document.getElementById("stat-current-streak");
+  const statLongestStreak = document.getElementById("stat-longest-streak");
+  const statTotalDays = document.getElementById("stat-total-days");
+  const routineCalendarGrid = document.getElementById("routine-calendar-grid");
+  const selectedDayTitle = document.getElementById("selected-day-title");
+  const selectedDaySummaryBadge = document.getElementById("selected-day-summary-badge");
+  const selectedDayContent = document.getElementById("selected-day-content");
+  const goalFeedbackInput = document.getElementById("goal-feedback-input");
+  const goalReviewInput = document.getElementById("goal-review-input");
+  const goalSaveBtn = document.getElementById("goal-save-btn");
+  const goalStatusMsg = document.getElementById("goal-status-msg");
+
   let currentInputMode = "text";
   let recognition = null;
   let isRecording = false;
@@ -74,18 +97,29 @@
   let todayStr = "";
   let savedExprKeys = new Set();
 
+  let routineData = null;
+  let selectedDateStr = "";
+
   function normalizeExpr(str) {
     return (str || "").trim().toLowerCase();
   }
 
   function switchTab(target) {
+    const isFeedback = target === "feedback";
     const isVocab = target === "vocab";
-    panelFeedback.hidden = isVocab;
+    const isRoutine = target === "routine";
+
+    panelFeedback.hidden = !isFeedback;
     panelVocab.hidden = !isVocab;
-    tabFeedbackBtn.classList.toggle("active", !isVocab);
+    if (panelRoutine) panelRoutine.hidden = !isRoutine;
+
+    tabFeedbackBtn.classList.toggle("active", isFeedback);
     tabVocabBtn.classList.toggle("active", isVocab);
-    tabFeedbackBtn.setAttribute("aria-selected", String(!isVocab));
+    if (tabRoutineBtn) tabRoutineBtn.classList.toggle("active", isRoutine);
+
+    tabFeedbackBtn.setAttribute("aria-selected", String(isFeedback));
     tabVocabBtn.setAttribute("aria-selected", String(isVocab));
+    if (tabRoutineBtn) tabRoutineBtn.setAttribute("aria-selected", String(isRoutine));
   }
 
   function setInputMode(mode) {
@@ -129,6 +163,13 @@
     vocabStatusMsg.hidden = false;
     vocabStatusMsg.textContent = text;
     vocabStatusMsg.className = `status-msg ${kind || "info"}`;
+  }
+
+  function showGoalStatus(text, kind) {
+    if (!goalStatusMsg) return;
+    goalStatusMsg.hidden = false;
+    goalStatusMsg.textContent = text;
+    goalStatusMsg.className = `status-msg ${kind || "info"}`;
   }
 
   function formatDate(isoStr) {
@@ -298,7 +339,6 @@
     }
     historyEmpty.hidden = true;
 
-    // 페이지 첫 로드 시 아직 표시된 첨삭 결과가 없으면 가장 최근 첨삭 결과를 자동으로 펼쳐 보여줌
     if (!lastRenderedRecord && items[0]) {
       renderRecord(items[0]);
     }
@@ -466,7 +506,7 @@
       topRow.appendChild(delBtn);
       li.appendChild(topRow);
 
-      if (item.example) {
+      if (item.example && normalizeExpr(item.example) !== normalizeExpr(item.expression)) {
         const exDiv = document.createElement("div");
         exDiv.className = "key-example";
         exDiv.textContent = `예문: "${item.example}"`;
@@ -493,6 +533,244 @@
 
       vocabList.appendChild(li);
     });
+  }
+
+  function renderSelectedDayDetail(dayObj) {
+    if (!dayObj || !selectedDayContent) return;
+    selectedDateStr = dayObj.date;
+
+    const isToday = routineData && dayObj.date === routineData.today;
+    selectedDayTitle.textContent = isToday
+      ? `📅 ${dayObj.date} (오늘) 공부 내역`
+      : `📅 ${dayObj.date} 공부 내역`;
+
+    selectedDaySummaryBadge.textContent = `첨삭 ${dayObj.feedbackCount}문장 · 복습 ${dayObj.reviewCount}단어`;
+
+    selectedDayContent.innerHTML = "";
+    const feedbacks = dayObj.feedbacks || [];
+    const reviews = dayObj.reviews || [];
+
+    if (!feedbacks.length && !reviews.length) {
+      const emptyP = document.createElement("p");
+      emptyP.className = "empty-state";
+      emptyP.textContent = "이 날짜에는 기록된 첨삭이나 단어 복습 내역이 없습니다.";
+      selectedDayContent.appendChild(emptyP);
+      return;
+    }
+
+    if (feedbacks.length > 0) {
+      const fbHeader = document.createElement("div");
+      fbHeader.className = "day-sub-header";
+      fbHeader.textContent = `✨ AI 첨삭 문장 (${feedbacks.length}건)`;
+      selectedDayContent.appendChild(fbHeader);
+
+      const fbUl = document.createElement("ul");
+      fbUl.className = "day-detail-list";
+      feedbacks.forEach((fb) => {
+        const li = document.createElement("li");
+        li.className = "day-detail-item";
+        li.innerHTML = `<div class="history-original">내가 쓴 문장:</div><div class="history-corrected"></div>`;
+        li.querySelector(".history-original").textContent = `내가 쓴 문장: ${fb.text}`;
+        li.querySelector(".history-corrected").textContent = `→ 교정: ${fb.corrected}`;
+        fbUl.appendChild(li);
+      });
+      selectedDayContent.appendChild(fbUl);
+    }
+
+    if (reviews.length > 0) {
+      const rvHeader = document.createElement("div");
+      rvHeader.className = "day-sub-header";
+      rvHeader.textContent = `📚 복습 완료한 표현 (${reviews.length}건)`;
+      selectedDayContent.appendChild(rvHeader);
+
+      const rvUl = document.createElement("ul");
+      rvUl.className = "day-detail-list";
+      const ratingLabelMap = {
+        again: "😓 몰랐음 (1일 뒤)",
+        hard: "🤔 헷갈림 (3일 뒤)",
+        easy: "😊 쉬웠음",
+      };
+      reviews.forEach((rv) => {
+        const li = document.createElement("li");
+        li.className = "day-detail-item";
+        const exprRow = document.createElement("div");
+        exprRow.className = "item-action-row";
+
+        const left = document.createElement("span");
+        left.className = "vocab-expr";
+        left.textContent = `${rv.expression} — ${rv.meaning}`;
+
+        const right = document.createElement("span");
+        right.className = "mode-badge mode-text";
+        right.textContent = ratingLabelMap[rv.rating] || rv.rating;
+
+        exprRow.appendChild(left);
+        exprRow.appendChild(right);
+        li.appendChild(exprRow);
+        rvUl.appendChild(li);
+      });
+      selectedDayContent.appendChild(rvUl);
+    }
+  }
+
+  function renderRoutine(data) {
+    if (!data) return;
+    routineData = data;
+    const goal = data.goal || { dailyFeedbackGoal: 1, dailyReviewGoal: 3 };
+    const todayInfo = data.todaySummary || {
+      date: data.today,
+      feedbackCount: 0,
+      reviewCount: 0,
+      studied: false,
+      goalMet: false,
+      progressPercent: 0,
+      feedbacks: [],
+      reviews: [],
+    };
+
+    // 1) 상단 루틴 배너 업데이트
+    if (bannerStreakPill) {
+      bannerStreakPill.textContent = `🔥 연속 ${data.currentStreak}일째`;
+      bannerStreakPill.className =
+        data.currentStreak > 0 ? "streak-pill active" : "streak-pill";
+    }
+    if (routineTabBadge) {
+      routineTabBadge.textContent = `${data.currentStreak}일 연속`;
+      routineTabBadge.className =
+        data.currentStreak > 0 ? "tab-badge has-due" : "tab-badge";
+    }
+    if (bannerProgressText) {
+      bannerProgressText.textContent = `오늘의 목표: 첨삭 ${todayInfo.feedbackCount}/${goal.dailyFeedbackGoal}문장 · 단어 복습 ${todayInfo.reviewCount}/${goal.dailyReviewGoal}개 (${todayInfo.progressPercent}%)`;
+    }
+    if (bannerProgressBar) {
+      bannerProgressBar.style.width = `${Math.min(100, todayInfo.progressPercent || 0)}%`;
+    }
+    if (bannerStatusBadge) {
+      if (todayInfo.goalMet) {
+        bannerStatusBadge.textContent = "🎉 오늘 목표 100% 달성!";
+        bannerStatusBadge.className = "routine-state-badge goal-met";
+      } else if (todayInfo.studied) {
+        bannerStatusBadge.textContent = "✅ 오늘 출석 완료 (연속 학습 유지)";
+        bannerStatusBadge.className = "routine-state-badge studied";
+      } else {
+        bannerStatusBadge.textContent = "오늘 첫 학습을 시작해 보세요";
+        bannerStatusBadge.className = "routine-state-badge";
+      }
+    }
+
+    // 2) 루틴 탭 요약 통계 업데이트
+    if (routineTodayBadge) {
+      routineTodayBadge.textContent = `기준일: ${data.today}`;
+    }
+    if (statCurrentStreak) {
+      statCurrentStreak.textContent = `${data.currentStreak}일째`;
+    }
+    if (statLongestStreak) {
+      statLongestStreak.textContent = `${data.longestStreak}일`;
+    }
+    if (statTotalDays) {
+      statTotalDays.textContent = `총 ${data.totalStudyDays}일`;
+    }
+
+    // 3) 목표 설정 입력창 동기화
+    if (goalFeedbackInput && document.activeElement !== goalFeedbackInput) {
+      goalFeedbackInput.value = String(goal.dailyFeedbackGoal);
+    }
+    if (goalReviewInput && document.activeElement !== goalReviewInput) {
+      goalReviewInput.value = String(goal.dailyReviewGoal);
+    }
+
+    // 4) 최근 14일 달력 렌더링
+    if (routineCalendarGrid) {
+      routineCalendarGrid.innerHTML = "";
+      const recentDays = data.recentDays || [];
+      const targetDate = selectedDateStr || data.today;
+      let selectedObj =
+        recentDays.find((d) => d.date === targetDate) ||
+        recentDays[recentDays.length - 1] ||
+        todayInfo;
+
+      recentDays.forEach((dayItem) => {
+        const cell = document.createElement("button");
+        cell.type = "button";
+        let stateClass = "cal-day-empty";
+        let statusIcon = "·";
+        if (dayItem.goalMet) {
+          stateClass = "cal-day-goal";
+          statusIcon = "🎉";
+        } else if (dayItem.studied) {
+          stateClass = "cal-day-studied";
+          statusIcon = "✅";
+        }
+        const isSelected = selectedObj && dayItem.date === selectedObj.date;
+        cell.className = `cal-day-cell ${stateClass}${isSelected ? " selected" : ""}`;
+
+        const shortDate = dayItem.date.slice(5).replace("-", "/");
+        cell.innerHTML = `
+          <span class="cal-date-label">${shortDate}</span>
+          <span class="cal-status-icon">${statusIcon}</span>
+          <span class="cal-counts">첨삭 ${dayItem.feedbackCount} · 복습 ${dayItem.reviewCount}</span>
+        `;
+        cell.addEventListener("click", () => {
+          selectedDateStr = dayItem.date;
+          renderRoutine(routineData);
+        });
+        routineCalendarGrid.appendChild(cell);
+      });
+
+      renderSelectedDayDetail(selectedObj);
+    }
+  }
+
+  async function fetchRoutine() {
+    try {
+      const res = await fetch("/api/routine");
+      if (!res.ok) return;
+      const data = await res.json();
+      renderRoutine(data);
+    } catch (_) {
+      // 초기 로드 실패 시 무시
+    }
+  }
+
+  async function submitDailyGoal() {
+    const fbGoal = parseInt(goalFeedbackInput.value, 10);
+    const rvGoal = parseInt(goalReviewInput.value, 10);
+
+    if (Number.isNaN(fbGoal) || fbGoal < 1 || fbGoal > 20) {
+      showGoalStatus("하루 목표 첨삭 문장 수는 1~20 사이의 숫자로 입력해 주세요.", "error");
+      return;
+    }
+    if (Number.isNaN(rvGoal) || rvGoal < 1 || rvGoal > 50) {
+      showGoalStatus("하루 목표 단어 복습 수는 1~50 사이의 숫자로 입력해 주세요.", "error");
+      return;
+    }
+
+    goalSaveBtn.disabled = true;
+    try {
+      const res = await fetch("/api/routine/goal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dailyFeedbackGoal: fbGoal,
+          dailyReviewGoal: rvGoal,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showGoalStatus(data.error || "목표 저장에 실패했습니다.", "error");
+        return;
+      }
+      renderRoutine(data);
+      showGoalStatus(
+        `하루 학습 목표(첨삭 ${fbGoal}문장 · 복습 ${rvGoal}단어)가 저장되었습니다!`,
+        "info"
+      );
+    } catch (_) {
+      showGoalStatus("서버와 통신할 수 없습니다.", "error");
+    } finally {
+      goalSaveBtn.disabled = false;
+    }
   }
 
   async function fetchVocab() {
@@ -587,6 +865,7 @@
       });
       if (res.ok) {
         await fetchVocab();
+        await fetchRoutine();
       }
     } finally {
       ratingBtns.forEach((b) => {
@@ -609,7 +888,6 @@
   async function submitSentence() {
     let text = sentenceInput.value.trim();
     if (!text) {
-      // 입력창이 비어 있을 때 바로 누르면 첫 번째 예시 문장을 자동으로 채워 진행
       const firstSample = document.querySelector(".chip-btn");
       const sampleText = firstSample ? firstSample.getAttribute("data-sample") : "";
       if (sampleText) {
@@ -647,6 +925,7 @@
       hideStatus();
       renderRecord(data);
       await fetchHistory();
+      await fetchRoutine();
     } catch (_) {
       showStatus("서버와 통신할 수 없습니다. 서버가 실행 중인지 확인해 주세요.", "error");
     } finally {
@@ -710,6 +989,15 @@
   // 이벤트 리스너 연결
   tabFeedbackBtn.addEventListener("click", () => switchTab("feedback"));
   tabVocabBtn.addEventListener("click", () => switchTab("vocab"));
+  if (tabRoutineBtn) {
+    tabRoutineBtn.addEventListener("click", () => switchTab("routine"));
+  }
+  if (bannerGoRoutineBtn) {
+    bannerGoRoutineBtn.addEventListener("click", () => switchTab("routine"));
+  }
+  if (goalSaveBtn) {
+    goalSaveBtn.addEventListener("click", submitDailyGoal);
+  }
 
   if (vocabToastGoBtn) {
     vocabToastGoBtn.addEventListener("click", () => {
@@ -780,4 +1068,5 @@
   updateCounter();
   fetchHistory();
   fetchVocab();
+  fetchRoutine();
 })();

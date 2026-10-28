@@ -46,3 +46,22 @@
 - 관찰: OB-1 (`POST /api/vocab` 및 `POST /api/vocab/review` 성공 응답에서 최상위 필드와 `item` 중첩 객체를 함께 제공하여 양쪽 클라이언트 접근 방식을 모두 지원함)
 - 담당 없음: 없음
 
+## 회차 5 — `audit-data` · 조각 3 `study-routine` (2026-10-28)
+
+- **감사한 커밋**: `5b12815` · 커밋 안 된 변경 포함 · **감사자**: `audit-data`
+- 기록: `docs/audit/nc-ledger-history.md`
+- 낸 것: 없음
+- 지난 회차: 회차 3 (`audit-data`, 열린 NC 및 U 없음)
+- 관찰: OB-1 (`iso_to_local_date_str`에서 ISO 문자열 앞 10자 추출 기준), OB-2 (`data/routine-settings.json` 수동 편집 파손 시 기본 목표 복구 동작)
+- 담당 없음: 없음
+
+## 회차 6 — `audit-contract` · 조각 3 `study-routine` (2026-10-28)
+
+- **감사한 커밋**: `5b12815` · 커밋 안 된 변경 포함 · **감사자**: `audit-contract`
+- 기록: `docs/audit/nc-ledger-history.md`
+- 낸 것: 없음
+- 지난 회차: 회차 4 (`audit-contract`, 열린 NC 및 U 없음)
+- 관찰: OB-1 (`POST /api/routine/goal` 응답에서 `GET /api/routine`과 동일한 루틴 요약 스키마 전체와 `message`를 함께 반환하여 추가 요청 없이 즉시 화면을 갱신함)
+- 담당 없음: 없음
+
+

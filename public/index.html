@@ -3,18 +3,37 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ImproveEnglish — AI 영작·말하기 첨삭 및 단어장 복습</title>
+  <title>ImproveEnglish — AI 영작·말하기 첨삭 · 단어장 복습 · 학습 루틴</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <div class="container">
     <header class="app-header">
       <div>
-        <span class="badge-brand">ImproveEnglish · 조각 2</span>
+        <span class="badge-brand">ImproveEnglish · 조각 1·2·3 통합</span>
         <h1>AI 영작·말하기 첨삭 코치</h1>
         <p class="subtitle">
-          영어 문장(모르는 표현은 한국어로 섞어 써도 OK)을 첨삭받고, 외우고 싶은 원어민 표현을 단어장에 담아 복습 주기에 맞춰 내 것으로 만드세요.
+          영어 문장을 첨삭받고, 외우고 싶은 표현을 단어장에 담아 복습 주기에 맞춰 학습하며 매일의 연속 학습 루틴을 이어가세요.
         </p>
+      </div>
+
+      <!-- 상단 연속 학습 루틴 & 오늘의 목표 배너 (항상 표시) -->
+      <div id="routine-banner" class="routine-banner" aria-label="오늘의 학습 루틴 현황">
+        <div class="routine-banner-left">
+          <span id="banner-streak-pill" class="streak-pill">🔥 연속 0일째</span>
+          <div class="routine-banner-info">
+            <div class="routine-banner-title-row">
+              <strong id="banner-progress-text">오늘의 목표: 첨삭 0/1문장 · 단어 복습 0/3개</strong>
+              <span id="banner-status-badge" class="routine-state-badge">오늘 첫 학습을 시작해 보세요</span>
+            </div>
+            <div class="progress-track" aria-hidden="true">
+              <div id="banner-progress-bar" class="progress-fill" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+        <button type="button" id="banner-go-routine-btn" class="btn-banner-link">
+          루틴·기록 보기 →
+        </button>
       </div>
 
       <!-- 상단 화면 전환 탭 -->
@@ -37,6 +56,16 @@
         >
           📚 내 단어장 · 오늘의 복습
           <span id="due-badge" class="tab-badge">오늘 복습 0</span>
+        </button>
+        <button
+          type="button"
+          id="tab-routine-btn"
+          class="tab-btn"
+          aria-selected="false"
+          aria-controls="panel-routine"
+        >
+          🔥 내 학습 루틴 · 기록
+          <span id="routine-tab-badge" class="tab-badge">0일 연속</span>
         </button>
       </nav>
     </header>
@@ -268,6 +297,92 @@
         <p id="vocab-empty" class="empty-state">
           아직 저장된 단어·표현이 없습니다.
         </p>
+      </section>
+    </section>
+
+    <!-- 탭 3: 내 학습 루틴 · 기록 화면 -->
+    <section id="panel-routine" class="main-grid" hidden>
+      <!-- ① 연속 학습 통계 카드 -->
+      <section class="card routine-summary-card" aria-labelledby="routine-summary-heading">
+        <div class="card-header-row">
+          <h2 id="routine-summary-heading">1. 내 연속 학습 루틴 현황</h2>
+          <span id="routine-today-badge" class="count-pill">기준일: -</span>
+        </div>
+        <p class="history-guide">
+          AI 첨삭 1회 이상 또는 단어 복습 1회 이상 학습하면 <strong>오늘의 연속 학습일(🔥 출석)</strong>이 자동으로 이어집니다.
+        </p>
+
+        <div class="streak-stats-grid">
+          <div class="stat-box highlight-stat">
+            <span class="stat-label">🔥 현재 연속 학습일</span>
+            <strong id="stat-current-streak" class="stat-value">0일째</strong>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">🏆 최장 연속 기록</span>
+            <strong id="stat-longest-streak" class="stat-value">0일</strong>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">📅 누적 학습일</span>
+            <strong id="stat-total-days" class="stat-value">총 0일</strong>
+          </div>
+        </div>
+      </section>
+
+      <!-- ② 최근 14일 학습 달력(잔디) 및 날짜별 공부 내역 -->
+      <section class="card routine-calendar-card" aria-labelledby="routine-cal-heading">
+        <div class="card-header-row">
+          <h2 id="routine-cal-heading">2. 최근 14일 학습 달력 및 날짜별 공부 내역</h2>
+          <div class="calendar-legend">
+            <span class="legend-item"><i class="dot dot-empty"></i> 미학습</span>
+            <span class="legend-item"><i class="dot dot-studied"></i> 출석 완료</span>
+            <span class="legend-item"><i class="dot dot-goal"></i> 목표 100% 달성</span>
+          </div>
+        </div>
+        <p class="history-guide">
+          날짜 칸을 누르면 그날 첨삭받은 영어 문장과 복습한 단어 내역을 아래에서 자세히 볼 수 있습니다.
+        </p>
+
+        <div id="routine-calendar-grid" class="calendar-grid"></div>
+
+        <!-- 선택한 날짜의 상세 공부 내역 -->
+        <div id="selected-day-box" class="selected-day-box">
+          <div class="card-header-row">
+            <h3 id="selected-day-title" class="selected-day-title">선택한 날짜 학습 내역</h3>
+            <span id="selected-day-summary-badge" class="mode-badge mode-text">첨삭 0건 · 복습 0건</span>
+          </div>
+          <div id="selected-day-content" class="selected-day-content"></div>
+        </div>
+      </section>
+
+      <!-- ③ 하루 학습 목표 설정 -->
+      <section class="card routine-goal-card" aria-labelledby="routine-goal-heading">
+        <div class="card-header-row">
+          <h2 id="routine-goal-heading">3. 내 하루 학습 목표 설정</h2>
+          <span class="mode-badge mode-text">내 PC에 자동 저장</span>
+        </div>
+        <p class="history-guide">
+          하루 목표를 모두 채우면 달력에 <strong>🎉 목표 100% 달성</strong>으로 기록됩니다(출석은 첨삭 또는 복습 1회만 해도 인정됩니다).
+        </p>
+
+        <div class="vocab-form-grid">
+          <div class="form-field">
+            <label for="goal-feedback-input">하루 목표 첨삭 문장 수 (1 ~ 20문장)</label>
+            <input type="number" id="goal-feedback-input" min="1" max="20" value="1" />
+          </div>
+          <div class="form-field">
+            <label for="goal-review-input">하루 목표 단어 복습 수 (1 ~ 50단어)</label>
+            <input type="number" id="goal-review-input" min="1" max="50" value="3" />
+          </div>
+        </div>
+
+        <div class="input-footer">
+          <span class="char-counter">설정한 목표는 즉시 오늘 진행률에 반영됩니다.</span>
+          <button type="button" id="goal-save-btn" class="btn btn-primary">
+            목표 저장하기
+          </button>
+        </div>
+
+        <p id="goal-status-msg" class="status-msg" role="status" aria-live="polite" hidden></p>
       </section>
     </section>
   </div>
