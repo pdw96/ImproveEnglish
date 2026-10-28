@@ -21,8 +21,16 @@
     ROUTINE: "ie_routine_state_v1",
   };
 
-  // 메모리 상에만 잠깐 보관되는 복호화된 활성 키 (페이지 새로고침 시 초기화)
-  let inMemoryDecryptedKey = null;
+  const SESSION_KEY = "ie_gemini_api_key_session";
+
+  // 메모리 상에 보관되는 복호화된 키 (세션 스토리지와 연동되어 새로고침 후에도 탭이 열려 있는 동안 유지)
+  let inMemoryDecryptedKey = (function () {
+    try {
+      return (sessionStorage.getItem(SESSION_KEY) || "").trim() || null;
+    } catch (_) {
+      return null;
+    }
+  })();
 
   async function deriveAesKey(pinOrPassword, saltBytes) {
     const enc = new TextEncoder();
@@ -72,6 +80,9 @@
     localStorage.setItem(STORAGE_KEYS.API_KEY_ENCRYPTED, JSON.stringify(cipherArray));
     localStorage.removeItem(STORAGE_KEYS.API_KEY); // 평문 키는 기기에서 즉시 영구 삭제
     inMemoryDecryptedKey = rawApiKey;
+    try {
+      sessionStorage.setItem(SESSION_KEY, rawApiKey);
+    } catch (_) {}
   }
 
   async function tryDecryptApiKeyWithPin(pin) {
@@ -100,6 +111,9 @@
       const dec = new TextDecoder();
       const result = dec.decode(decryptedBuffer);
       inMemoryDecryptedKey = result;
+      try {
+        sessionStorage.setItem(SESSION_KEY, result);
+      } catch (_) {}
       return result;
     } catch (_) {
       return null;
@@ -1308,6 +1322,9 @@
       localStorage.removeItem(STORAGE_KEYS.API_KEY_SALT);
       localStorage.removeItem(STORAGE_KEYS.API_KEY_IV);
       localStorage.removeItem(STORAGE_KEYS.API_KEY_ENCRYPTED);
+      try {
+        sessionStorage.removeItem(SESSION_KEY);
+      } catch (_) {}
       inMemoryDecryptedKey = null;
     },
     exportBackupPayload,
