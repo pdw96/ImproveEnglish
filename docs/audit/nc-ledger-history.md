@@ -28,3 +28,21 @@
 - 관찰: OB-1 (`POST /api/feedback` 32KB 바이트 상한 및 `Content-Length` 헤더 기반 읽기는 코드에 정의됨), OB-2 (`design.md` 하단 `바뀐 결정` 절에 Python 3.14 파일 경로가 정의됨)
 - 담당 없음: 없음
 
+## 회차 3 — `audit-data` · 조각 2 `vocab-review` (2026-10-28)
+
+- **감사한 커밋**: `315216f` · 커밋 안 된 변경 포함 · **감사자**: `audit-data`
+- 기록: `docs/audit/nc-ledger-history.md`
+- 낸 것: 없음
+- 지난 회차: 없음 — 첫 회차
+- 관찰: OB-1 (`data/vocab-items.json` 수동 편집 등으로 JSON 파싱 실패 시 빈 목록으로 읽힘 — 정상 쓰기 경로는 임시 파일 원자적 교체 사용)
+- 담당 없음: 없음
+
+## 회차 4 — `audit-contract` · 조각 2 `vocab-review` (2026-10-28)
+
+- **감사한 커밋**: `315216f` · 커밋 안 된 변경 포함 · **감사자**: `audit-contract`
+- 기록: `docs/audit/nc-ledger-history.md`
+- 낸 것: 없음
+- 지난 회차: 회차 2 (`audit-contract`, 열린 NC 및 U 없음)
+- 관찰: OB-1 (`POST /api/vocab` 및 `POST /api/vocab/review` 성공 응답에서 최상위 필드와 `item` 중첩 객체를 함께 제공하여 양쪽 클라이언트 접근 방식을 모두 지원함)
+- 담당 없음: 없음
+
