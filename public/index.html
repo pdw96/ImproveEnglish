@@ -90,12 +90,20 @@
           <span id="result-meta" class="result-meta"></span>
         </div>
 
-        <p id="vocab-toast" class="status-msg info" role="status" aria-live="polite" hidden></p>
+        <div id="vocab-toast" class="status-msg info toast-bar" role="status" aria-live="polite" hidden>
+          <span id="vocab-toast-text"></span>
+          <button type="button" id="vocab-toast-go-btn" class="btn-inline-link">
+            📚 오늘의 복습 카드로 이동 →
+          </button>
+        </div>
 
         <div class="result-cards">
           <!-- ① 교정 및 이유 -->
           <article class="card result-card highlight-card">
-            <div class="step-tag">① 교정 문장 및 이유</div>
+            <div class="item-action-row">
+              <div class="step-tag">① 교정 문장 및 이유</div>
+              <div id="res-corrected-save-wrap"></div>
+            </div>
             <p class="original-line">
               <span class="label">내가 쓴 문장:</span>
               <span id="res-original"></span>
@@ -185,9 +193,19 @@
         </div>
 
         <!-- 복습할 카드가 없을 때 -->
-        <p id="quiz-empty" class="empty-state">
-          오늘 복습할 표현이 없습니다. 첨삭 결과에서 <strong>[+ 단어장에 담기]</strong>를 누르거나 아래에서 새 표현을 추가해 보세요!
-        </p>
+        <div id="quiz-empty" class="empty-state">
+          <p id="quiz-empty-text">
+            오늘 복습할 표현이 없습니다. 첨삭 결과에서 표현을 담거나 아래 버튼을 눌러보세요!
+          </p>
+          <div id="quiz-empty-actions" class="empty-actions">
+            <button type="button" id="go-feedback-from-empty-btn" class="btn btn-secondary">
+              ✨ 첨삭 결과에서 표현 담기
+            </button>
+            <button type="button" id="quick-sample-vocab-btn" class="btn btn-primary">
+              + 예시 표현("get off work") 바로 담아 복습 체험하기
+            </button>
+          </div>
+        </div>
       </section>
 
       <!-- 직접 단어 추가 섹션 -->

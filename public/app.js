@@ -25,6 +25,9 @@
   const resultSection = document.getElementById("result-section");
   const resultMeta = document.getElementById("result-meta");
   const vocabToast = document.getElementById("vocab-toast");
+  const vocabToastText = document.getElementById("vocab-toast-text");
+  const vocabToastGoBtn = document.getElementById("vocab-toast-go-btn");
+  const resCorrectedSaveWrap = document.getElementById("res-corrected-save-wrap");
   const resOriginal = document.getElementById("res-original");
   const resCorrected = document.getElementById("res-corrected");
   const resExplanation = document.getElementById("res-explanation");
@@ -39,6 +42,10 @@
   const reviewProgress = document.getElementById("review-progress");
   const quizBox = document.getElementById("quiz-box");
   const quizEmpty = document.getElementById("quiz-empty");
+  const quizEmptyText = document.getElementById("quiz-empty-text");
+  const quizEmptyActions = document.getElementById("quiz-empty-actions");
+  const goFeedbackFromEmptyBtn = document.getElementById("go-feedback-from-empty-btn");
+  const quickSampleVocabBtn = document.getElementById("quick-sample-vocab-btn");
   const quizMeaning = document.getElementById("quiz-meaning");
   const quizHint = document.getElementById("quiz-hint");
   const quizRevealBtn = document.getElementById("quiz-reveal-btn");
@@ -110,8 +117,12 @@
 
   function showVocabToast(text, kind) {
     vocabToast.hidden = false;
-    vocabToast.textContent = text;
-    vocabToast.className = `status-msg ${kind || "info"}`;
+    if (vocabToastText) {
+      vocabToastText.textContent = text;
+    } else {
+      vocabToast.textContent = text;
+    }
+    vocabToast.className = `status-msg ${kind || "info"} toast-bar`;
   }
 
   function showVocabFormStatus(text, kind) {
@@ -135,6 +146,9 @@
   }
 
   function createSaveToVocabButton(expression, meaning, example) {
+    const wrap = document.createElement("div");
+    wrap.className = "save-btn-group";
+
     const btn = document.createElement("button");
     btn.type = "button";
     const alreadySaved = savedExprKeys.has(normalizeExpr(expression));
@@ -167,7 +181,7 @@
           );
         } else {
           showVocabToast(
-            `"${expression}" 표현을 내 단어장에 담았습니다! 상단 [📚 내 단어장 · 오늘의 복습] 탭에서 바로 복습할 수 있습니다.`,
+            `"${expression}" 표현을 내 단어장에 담았습니다!`,
             "info"
           );
         }
@@ -179,7 +193,21 @@
       }
     });
 
-    return btn;
+    wrap.appendChild(btn);
+
+    if (alreadySaved) {
+      const goReviewBtn = document.createElement("button");
+      goReviewBtn.type = "button";
+      goReviewBtn.className = "btn-go-review-mini";
+      goReviewBtn.textContent = "복습하기 →";
+      goReviewBtn.addEventListener("click", () => {
+        switchTab("vocab");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+      wrap.appendChild(goReviewBtn);
+    }
+
+    return wrap;
   }
 
   function renderRecord(record) {
@@ -192,6 +220,13 @@
     resOriginal.textContent = record.text;
     resCorrected.textContent = fb.corrected;
     resExplanation.textContent = fb.explanation;
+
+    if (resCorrectedSaveWrap) {
+      resCorrectedSaveWrap.innerHTML = "";
+      resCorrectedSaveWrap.appendChild(
+        createSaveToVocabButton(fb.corrected, record.text, "")
+      );
+    }
 
     resAlternatives.innerHTML = "";
     (fb.alternatives || []).forEach((item) => {
@@ -208,7 +243,7 @@
       const saveBtn = createSaveToVocabButton(
         item.expression,
         item.nuance,
-        item.expression
+        ""
       );
 
       topRow.appendChild(expr);
@@ -262,6 +297,12 @@
       return;
     }
     historyEmpty.hidden = true;
+
+    // 페이지 첫 로드 시 아직 표시된 첨삭 결과가 없으면 가장 최근 첨삭 결과를 자동으로 펼쳐 보여줌
+    if (!lastRenderedRecord && items[0]) {
+      renderRecord(items[0]);
+    }
+
     items.forEach((item) => {
       const li = document.createElement("li");
       li.className = "history-item";
@@ -321,11 +362,21 @@
       quizBox.hidden = true;
       quizEmpty.hidden = false;
       if (vocabItems.length > 0) {
-        quizEmpty.innerHTML =
-          "🎉 오늘 복습할 표현을 모두 마쳤습니다! 아래 전체 단어장에서 다음 복습 예정일을 확인해 보세요.";
+        if (quizEmptyText) {
+          quizEmptyText.textContent =
+            "🎉 오늘 복습할 표현을 모두 마쳤습니다! 아래 전체 단어장에서 다음 복습 예정일을 확인해 보세요.";
+        }
+        if (quizEmptyActions) {
+          quizEmptyActions.hidden = true;
+        }
       } else {
-        quizEmpty.innerHTML =
-          "오늘 복습할 표현이 없습니다. 첨삭 결과에서 <strong>[+ 단어장에 담기]</strong>를 누르거나 아래에서 새 표현을 추가해 보세요!";
+        if (quizEmptyText) {
+          quizEmptyText.textContent =
+            "아직 오늘 복습할 표현이 없습니다. 첨삭 결과에서 담거나 아래 버튼으로 바로 체험해 보세요!";
+        }
+        if (quizEmptyActions) {
+          quizEmptyActions.hidden = false;
+        }
       }
       return;
     }
@@ -335,7 +386,10 @@
     quizBox.hidden = false;
 
     quizMeaning.textContent = current.meaning;
-    if (current.example) {
+    const hasDistinctExample =
+      current.example &&
+      normalizeExpr(current.example) !== normalizeExpr(current.expression);
+    if (hasDistinctExample) {
       const masked = maskExpressionInExample(current.example, current.expression);
       quizHint.hidden = false;
       quizHint.textContent = `예문 힌트: "${masked}"`;
@@ -347,7 +401,7 @@
     quizAnswerArea.hidden = true;
     quizRevealBtn.hidden = false;
     quizAnswerExpr.textContent = current.expression;
-    quizAnswerExample.textContent = current.example
+    quizAnswerExample.textContent = hasDistinctExample
       ? `예문: "${current.example}"`
       : "";
 
@@ -553,10 +607,19 @@
   }
 
   async function submitSentence() {
-    const text = sentenceInput.value.trim();
+    let text = sentenceInput.value.trim();
     if (!text) {
-      showStatus("첨삭받을 영어 문장을 입력해 주세요.", "error");
-      return;
+      // 입력창이 비어 있을 때 바로 누르면 첫 번째 예시 문장을 자동으로 채워 진행
+      const firstSample = document.querySelector(".chip-btn");
+      const sampleText = firstSample ? firstSample.getAttribute("data-sample") : "";
+      if (sampleText) {
+        sentenceInput.value = sampleText;
+        updateCounter();
+        text = sampleText.trim();
+      } else {
+        showStatus("첨삭받을 영어 문장을 입력해 주세요.", "error");
+        return;
+      }
     }
     if (text.length > 1000) {
       showStatus("문장은 최대 1,000자까지 입력할 수 있습니다.", "error");
@@ -647,6 +710,42 @@
   // 이벤트 리스너 연결
   tabFeedbackBtn.addEventListener("click", () => switchTab("feedback"));
   tabVocabBtn.addEventListener("click", () => switchTab("vocab"));
+
+  if (vocabToastGoBtn) {
+    vocabToastGoBtn.addEventListener("click", () => {
+      switchTab("vocab");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+
+  if (goFeedbackFromEmptyBtn) {
+    goFeedbackFromEmptyBtn.addEventListener("click", () => {
+      switchTab("feedback");
+      if (resultSection && !resultSection.hidden) {
+        resultSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+  }
+
+  if (quickSampleVocabBtn) {
+    quickSampleVocabBtn.addEventListener("click", async () => {
+      quickSampleVocabBtn.disabled = true;
+      try {
+        await fetch("/api/vocab", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            expression: "get off work",
+            meaning: "퇴근하다, 근무를 마치고 나오다",
+            example: "What time do you usually get off work on Fridays?",
+          }),
+        });
+        await fetchVocab();
+      } finally {
+        quickSampleVocabBtn.disabled = false;
+      }
+    });
+  }
 
   sentenceInput.addEventListener("input", updateCounter);
 

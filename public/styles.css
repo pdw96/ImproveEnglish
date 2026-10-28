@@ -128,7 +128,8 @@ body {
   gap: 20px;
 }
 
-.main-grid[hidden] {
+.main-grid[hidden],
+[hidden] {
   display: none !important;
 }
 
@@ -393,6 +394,13 @@ input[type="text"]:focus {
 }
 
 /* [+ 단어장에 담기] 버튼 */
+.save-btn-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .btn-save-vocab {
   flex-shrink: 0;
   background: var(--accent-bg);
@@ -415,6 +423,52 @@ input[type="text"]:focus {
   background: var(--success-bg);
   color: var(--success-text);
   border-color: var(--success-border);
+}
+
+.btn-go-review-mini {
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-go-review-mini:hover {
+  background: var(--primary-hover);
+}
+
+.toast-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.btn-inline-link {
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-inline-link:hover {
+  background: var(--primary-hover);
+}
+
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 /* 오늘의 복습 카드 */
@@ -568,11 +622,13 @@ input[type="text"]:focus {
 }
 
 .btn-delete-vocab {
+  flex-shrink: 0;
+  white-space: nowrap;
   background: transparent;
   color: var(--danger-text);
   border: 1px solid #fecaca;
   border-radius: 6px;
-  padding: 3px 9px;
+  padding: 4px 10px;
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
