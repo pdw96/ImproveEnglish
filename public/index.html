@@ -503,11 +503,11 @@
       <!-- ② 기기 내 Gemini API 키 설정 (코드 하드코딩 없음) -->
       <section class="card settings-card" aria-labelledby="settings-key-heading">
         <div class="card-header-row">
-          <h2 id="settings-key-heading"><span class="sec-num">02</span> 내 기기 전용 Gemini API 키 설정</h2>
+          <h2 id="settings-key-heading"><span class="sec-num">02</span> 내 기기 전용 Gemini API 키 설정 및 암호화 금고</h2>
           <span id="apikey-status-badge" class="mode-badge mode-text">내장 스마트 코치 동작 중</span>
         </div>
         <p class="history-guide">
-          입력하신 API 키는 외부 서버나 GitHub에 절대 올라가지 않으며, <strong>현재 스마트폰 기기 내부에만 안전하게 저장</strong>됩니다. 키를 넣지 않아도 내장 스마트 코치로 모든 학습·복습·루틴 기능을 이용하실 수 있습니다.
+          입력하신 API 키는 외부 서버나 GitHub에 절대 올라가지 않으며, <strong>현재 스마트폰 기기 내부에만 안전하게 저장</strong>됩니다. 타인의 물리적 스마트폰 열람으로부터 키를 보호하려면 <strong>보안 암호화 금고 비밀번호</strong>를 설정해 두세요.
         </p>
 
         <div class="vocab-form-grid">
@@ -520,6 +520,15 @@
               placeholder="AIza... 로 시작하는 개인 Gemini API 키를 붙여넣으세요"
             />
           </div>
+          <div class="form-field form-field-full">
+            <label for="settings-pin-input">기기 암호화 비밀번호 / PIN 번호 (선택, 입력 시 AES-256 암호화 보관)</label>
+            <input
+              type="password"
+              id="settings-pin-input"
+              autocomplete="off"
+              placeholder="4자리 이상 비밀번호 (설정 시 폰 내부 저장소에서도 암호문으로 안전하게 잠깁니다)"
+            />
+          </div>
         </div>
 
         <div class="input-footer">
@@ -529,7 +538,7 @@
               키 삭제
             </button>
             <button type="button" id="apikey-save-btn" class="btn btn-primary">
-              기기에 API 키 저장
+              기기에 API 키 저장 (암호화)
             </button>
           </div>
         </div>

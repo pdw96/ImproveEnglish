@@ -13,10 +13,98 @@
   const STORAGE_KEYS = {
     MODE: "ie_standalone_mode", // "standalone" (기본) | "server"
     API_KEY: "ie_gemini_api_key",
+    API_KEY_SALT: "ie_gemini_api_key_salt",
+    API_KEY_IV: "ie_gemini_api_key_iv",
+    API_KEY_ENCRYPTED: "ie_gemini_api_key_encrypted",
     HISTORY: "ie_feedback_history_v1",
     VOCAB: "ie_vocab_items_v1",
     ROUTINE: "ie_routine_state_v1",
   };
+
+  // 메모리 상에만 잠깐 보관되는 복호화된 활성 키 (페이지 새로고침 시 초기화)
+  let inMemoryDecryptedKey = null;
+
+  async function deriveAesKey(pinOrPassword, saltBytes) {
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(pinOrPassword),
+      { name: "PBKDF2" },
+      false,
+      ["deriveKey"]
+    );
+    return crypto.subtle.deriveKey(
+      {
+        name: "PBKDF2",
+        salt: saltBytes,
+        iterations: 100000,
+        hash: "SHA-256",
+      },
+      keyMaterial,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"]
+    );
+  }
+
+  async function encryptApiKeyWithPin(rawApiKey, pin) {
+    if (!pin) {
+      // PIN이 없으면 평문 저장 (이전 방식 호환)
+      localStorage.setItem(STORAGE_KEYS.API_KEY, rawApiKey);
+      localStorage.removeItem(STORAGE_KEYS.API_KEY_SALT);
+      localStorage.removeItem(STORAGE_KEYS.API_KEY_IV);
+      localStorage.removeItem(STORAGE_KEYS.API_KEY_ENCRYPTED);
+      inMemoryDecryptedKey = rawApiKey;
+      return;
+    }
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveAesKey(pin, salt);
+    const enc = new TextEncoder();
+    const cipherBuffer = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      enc.encode(rawApiKey)
+    );
+    const cipherArray = Array.from(new Uint8Array(cipherBuffer));
+    localStorage.setItem(STORAGE_KEYS.API_KEY_SALT, JSON.stringify(Array.from(salt)));
+    localStorage.setItem(STORAGE_KEYS.API_KEY_IV, JSON.stringify(Array.from(iv)));
+    localStorage.setItem(STORAGE_KEYS.API_KEY_ENCRYPTED, JSON.stringify(cipherArray));
+    localStorage.removeItem(STORAGE_KEYS.API_KEY); // 평문 키는 기기에서 즉시 영구 삭제
+    inMemoryDecryptedKey = rawApiKey;
+  }
+
+  async function tryDecryptApiKeyWithPin(pin) {
+    if (inMemoryDecryptedKey) return inMemoryDecryptedKey;
+    const rawPlain = (localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim();
+    if (rawPlain) {
+      inMemoryDecryptedKey = rawPlain;
+      return rawPlain;
+    }
+    const encStr = localStorage.getItem(STORAGE_KEYS.API_KEY_ENCRYPTED);
+    const saltStr = localStorage.getItem(STORAGE_KEYS.API_KEY_SALT);
+    const ivStr = localStorage.getItem(STORAGE_KEYS.API_KEY_IV);
+    if (!encStr || !saltStr || !ivStr || !pin) {
+      return null;
+    }
+    try {
+      const salt = new Uint8Array(JSON.parse(saltStr));
+      const iv = new Uint8Array(JSON.parse(ivStr));
+      const cipher = new Uint8Array(JSON.parse(encStr));
+      const key = await deriveAesKey(pin, salt);
+      const decryptedBuffer = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv },
+        key,
+        cipher
+      );
+      const dec = new TextDecoder();
+      const result = dec.decode(decryptedBuffer);
+      inMemoryDecryptedKey = result;
+      return result;
+    } catch (_) {
+      return null;
+    }
+  }
 
   const VALID_MISSION_CATEGORIES = ["all", "work", "daily", "travel", "opinion"];
   const CATEGORY_LABELS = {
@@ -501,7 +589,9 @@
   }
 
   async function callDirectGeminiOrCoach(text, inputMode, rawFetch) {
-    const savedKey = (localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim();
+    const savedKey =
+      inMemoryDecryptedKey ||
+      (localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim();
     if (!savedKey) {
       return buildLocalCoachFeedback(text);
     }
@@ -1172,25 +1262,53 @@
       return next;
     },
     hasApiKey() {
-      return Boolean((localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim());
+      return Boolean(
+        inMemoryDecryptedKey ||
+          (localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim() ||
+          localStorage.getItem(STORAGE_KEYS.API_KEY_ENCRYPTED)
+      );
+    },
+    isEncrypted() {
+      return Boolean(localStorage.getItem(STORAGE_KEYS.API_KEY_ENCRYPTED));
+    },
+    isUnlocked() {
+      return Boolean(
+        inMemoryDecryptedKey ||
+          (localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim()
+      );
     },
     getMaskedApiKey() {
-      const k = (localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim();
-      if (!k) return "";
-      if (k.length <= 8) return "********";
-      return `${k.slice(0, 4)}••••••••${k.slice(-4)}`;
+      const k =
+        inMemoryDecryptedKey ||
+        (localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim();
+      if (k) {
+        if (k.length <= 8) return "********";
+        return `${k.slice(0, 4)}••••••••${k.slice(-4)}`;
+      }
+      if (localStorage.getItem(STORAGE_KEYS.API_KEY_ENCRYPTED)) {
+        return "🔒 암호화되어 안전하게 잠금 보관 중 (AES-256)";
+      }
+      return "";
     },
-    saveApiKey(rawKey) {
+    async saveApiKeyWithPin(rawKey, pin) {
       const cleaned = (rawKey || "").trim();
       if (!cleaned) {
-        localStorage.removeItem(STORAGE_KEYS.API_KEY);
+        this.clearApiKey();
         return false;
       }
-      localStorage.setItem(STORAGE_KEYS.API_KEY, cleaned);
+      await encryptApiKeyWithPin(cleaned, (pin || "").trim());
       return true;
+    },
+    async unlockWithPin(pin) {
+      const key = await tryDecryptApiKeyWithPin((pin || "").trim());
+      return Boolean(key);
     },
     clearApiKey() {
       localStorage.removeItem(STORAGE_KEYS.API_KEY);
+      localStorage.removeItem(STORAGE_KEYS.API_KEY_SALT);
+      localStorage.removeItem(STORAGE_KEYS.API_KEY_IV);
+      localStorage.removeItem(STORAGE_KEYS.API_KEY_ENCRYPTED);
+      inMemoryDecryptedKey = null;
     },
     exportBackupPayload,
     importBackupPayload,

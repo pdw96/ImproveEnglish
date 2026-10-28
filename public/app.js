@@ -110,6 +110,7 @@
   const pwaInstallBtn = document.getElementById("pwa-install-btn");
   const apikeyStatusBadge = document.getElementById("apikey-status-badge");
   const settingsApikeyInput = document.getElementById("settings-apikey-input");
+  const settingsPinInput = document.getElementById("settings-pin-input");
   const apikeyMaskedHint = document.getElementById("apikey-masked-hint");
   const apikeySaveBtn = document.getElementById("apikey-save-btn");
   const apikeyClearBtn = document.getElementById("apikey-clear-btn");
@@ -1331,17 +1332,36 @@
     }
 
     if (apikeySaveBtn && engine) {
-      apikeySaveBtn.addEventListener("click", () => {
+      apikeySaveBtn.addEventListener("click", async () => {
         const val = settingsApikeyInput ? settingsApikeyInput.value.trim() : "";
+        const pin = settingsPinInput ? settingsPinInput.value.trim() : "";
+
+        // 기존에 암호화된 키가 있고, API 키 입력 없이 PIN만 입력한 경우 -> 잠금 해제 시도
+        if (!val && engine.isEncrypted() && pin) {
+          const unlocked = await engine.unlockWithPin(pin);
+          if (unlocked) {
+            renderStandaloneSettings();
+            showApikeyStatus("암호화 금고가 해제되었습니다! Gemini AI 첨삭이 활성화되었습니다.", "info");
+            if (settingsPinInput) settingsPinInput.value = "";
+          } else {
+            showApikeyStatus("비밀번호(PIN)가 일치하지 않습니다.", "error");
+          }
+          return;
+        }
+
         if (!val) {
           showApikeyStatus("저장할 Gemini API 키를 입력해 주세요.", "error");
           return;
         }
-        engine.saveApiKey(val);
+        await engine.saveApiKeyWithPin(val, pin);
         if (settingsApikeyInput) settingsApikeyInput.value = "";
+        if (settingsPinInput) settingsPinInput.value = "";
         renderStandaloneSettings();
+        const encNotice = pin
+          ? " (입력하신 비밀번호로 AES-256 암호화되어 기기에 보관되었습니다)"
+          : " (비밀번호 미설정 일반 보관)";
         showApikeyStatus(
-          "개인 Gemini API 키가 이 기기 내부에 안전하게 저장되었습니다.",
+          `개인 Gemini API 키가 이 기기 내부에 안전하게 저장되었습니다${encNotice}.`,
           "info"
         );
       });
