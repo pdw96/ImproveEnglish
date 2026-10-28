@@ -1,7 +1,8 @@
-"""첨삭 요청(POST /api/feedback)과 기록 조회(GET /api/history) 및 정적 웹 화면을 제공하는 로컬 서버."""
+"""첨삭(POST /api/feedback, GET /api/history)과 단어장·복습(GET/POST /api/vocab, POST /api/vocab/review, DELETE /api/vocab/<id>) 및 정적 웹 화면을 제공하는 로컬 서버."""
 
 from __future__ import annotations
 
+from datetime import date
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib
@@ -10,7 +11,7 @@ import mimetypes
 import os
 import pathlib
 from typing import Callable
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import src.gemini as gemini_module
 from src.feedback_types import (
@@ -21,6 +22,8 @@ from src.feedback_types import (
 )
 from src.gemini import GeminiServiceError, generate_feedback, load_dotenv_file
 from src.history_store import HistoryStore
+from src.vocab_store import VocabStore
+from src.vocab_types import VocabCreateRequest, VocabReviewRequest
 
 PUBLIC_DIR = pathlib.Path(__file__).resolve().parent.parent / "public"
 MAX_BODY_BYTES = 32 * 1024  # 32KB 상한으로 비정상 대용량 요청 차단
@@ -34,8 +37,10 @@ class FeedbackApp:
         store: HistoryStore | None = None,
         ai_fn: Callable[[FeedbackRequest], FeedbackResponse] | None = None,
         public_dir: pathlib.Path | None = None,
+        vocab_store: VocabStore | None = None,
     ) -> None:
         self.store = store or HistoryStore()
+        self.vocab_store = vocab_store or VocabStore()
         self._custom_ai_fn = ai_fn
         self.public_dir = public_dir or PUBLIC_DIR
 
@@ -46,6 +51,29 @@ class FeedbackApp:
             importlib.reload(gemini_module)
         return gemini_module.generate_feedback(req)
 
+    def _parse_json_body(
+        self, raw_body: bytes
+    ) -> tuple[dict[str, object] | None, tuple[int, dict[str, object]] | None]:
+        """요청 본문 크기와 JSON 구문을 검증한다."""
+        if len(raw_body) > MAX_BODY_BYTES:
+            return None, (
+                HTTPStatus.BAD_REQUEST,
+                {"error": "요청 크기가 너무 큽니다. 허용된 길이 이내로 입력해 주세요."},
+            )
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None, (
+                HTTPStatus.BAD_REQUEST,
+                {"error": "올바른 JSON 형식의 요청이 아닙니다."},
+            )
+        if not isinstance(payload, dict):
+            return None, (
+                HTTPStatus.BAD_REQUEST,
+                {"error": "요청 본문은 JSON 객체여야 합니다."},
+            )
+        return payload, None
+
     def handle_get_history(self) -> tuple[int, dict[str, object]]:
         """저장된 첨삭 기록 목록을 최신순으로 반환한다([G3])."""
         records = self.store.list_records()
@@ -53,16 +81,9 @@ class FeedbackApp:
 
     def handle_post_feedback(self, raw_body: bytes) -> tuple[int, dict[str, object]]:
         """입력 문장을 검증([G1])하고 AI 3단 첨삭([G2]) 후 로컬 기록에 자동 저장([G3])한다."""
-        if len(raw_body) > MAX_BODY_BYTES:
-            return HTTPStatus.BAD_REQUEST, {
-                "error": "요청 크기가 너무 큽니다. 1,000자 이하의 문장으로 입력해 주세요."
-            }
-        try:
-            payload = json.loads(raw_body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return HTTPStatus.BAD_REQUEST, {
-                "error": "올바른 JSON 형식의 요청이 아닙니다."
-            }
+        payload, err = self._parse_json_body(raw_body)
+        if err is not None:
+            return err
 
         try:
             req = FeedbackRequest.from_dict(payload)
@@ -81,6 +102,92 @@ class FeedbackApp:
         record = FeedbackRecord.create(req, feedback)
         self.store.save_record(record)
         return HTTPStatus.OK, record.to_dict()
+
+    def handle_get_vocab(
+        self, today: date | None = None
+    ) -> tuple[int, dict[str, object]]:
+        """전체 단어장 목록과 오늘 복습할 대상(nextReviewDate <= 오늘) 목록을 반환한다([V2], [V3])."""
+        base_today = today or date.today()
+        items = self.vocab_store.list_items()
+        due_items = [item for item in items if item.is_due(today=base_today)]
+        return HTTPStatus.OK, {
+            "items": [item.to_dict() for item in items],
+            "dueItems": [item.to_dict() for item in due_items],
+            "totalCount": len(items),
+            "dueCount": len(due_items),
+            "today": base_today.isoformat(),
+        }
+
+    def handle_post_vocab(
+        self, raw_body: bytes, today: date | None = None
+    ) -> tuple[int, dict[str, object]]:
+        """단어장에 새 표현을 추가하거나 이미 있는 표현이면 중복 생성 없이 기존 항목을 안내한다([V1], [V3])."""
+        payload, err = self._parse_json_body(raw_body)
+        if err is not None:
+            return err
+
+        try:
+            req = VocabCreateRequest.from_dict(payload)
+        except ValidationError as exc:
+            return HTTPStatus.BAD_REQUEST, {"error": str(exc)}
+
+        item, duplicated = self.vocab_store.add_item(req, today=today)
+        message = (
+            "이미 단어장에 담긴 표현입니다. 기존 항목을 안내합니다."
+            if duplicated
+            else "단어장에 새로운 표현을 담았습니다."
+        )
+        item_dict = item.to_dict()
+        return HTTPStatus.OK, {
+            **item_dict,
+            "item": item_dict,
+            "duplicated": duplicated,
+            "message": message,
+        }
+
+    def handle_post_vocab_review(
+        self, raw_body: bytes, today: date | None = None
+    ) -> tuple[int, dict[str, object]]:
+        """복습 난이도(again / hard / easy) 평가를 반영해 다음 복습 예정일을 갱신한다([V2], [V3])."""
+        payload, err = self._parse_json_body(raw_body)
+        if err is not None:
+            return err
+
+        try:
+            req = VocabReviewRequest.from_dict(payload)
+        except ValidationError as exc:
+            return HTTPStatus.BAD_REQUEST, {"error": str(exc)}
+
+        updated = self.vocab_store.review_item(req, today=today)
+        if updated is None:
+            return HTTPStatus.NOT_FOUND, {
+                "error": "해당 단어장 항목을 찾을 수 없습니다."
+            }
+
+        item_dict = updated.to_dict()
+        return HTTPStatus.OK, {
+            **item_dict,
+            "item": item_dict,
+            "message": f"복습 결과가 반영되었습니다(다음 복습일: {updated.next_review_date}).",
+        }
+
+    def handle_delete_vocab(self, item_id: str) -> tuple[int, dict[str, object]]:
+        """지정한 ID의 단어장 항목을 삭제한다([V3])."""
+        if not isinstance(item_id, str) or not item_id.strip():
+            return HTTPStatus.BAD_REQUEST, {
+                "error": "삭제할 단어장 항목 ID를 입력해 주세요."
+            }
+
+        deleted = self.vocab_store.delete_item(item_id)
+        if not deleted:
+            return HTTPStatus.NOT_FOUND, {
+                "error": "해당 단어장 항목을 찾을 수 없습니다."
+            }
+
+        return HTTPStatus.OK, {
+            "deletedId": item_id.strip(),
+            "message": "단어장 항목이 삭제되었습니다.",
+        }
 
     def handle_static(self, url_path: str) -> tuple[int, str, bytes]:
         """정적 웹 화면 파일(index.html, app.js, styles.css)을 읽고 경로 탐색 공격을 차단한다."""
@@ -112,33 +219,68 @@ def create_http_server(
     active_app = app or FeedbackApp()
 
     class RequestHandler(BaseHTTPRequestHandler):
+        def _read_request_body(self) -> bytes:
+            content_length_header = self.headers.get("Content-Length", "0")
+            try:
+                length = int(content_length_header)
+            except ValueError:
+                length = 0
+            return self.rfile.read(max(0, min(length, MAX_BODY_BYTES + 1)))
+
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             if parsed.path == "/api/history":
                 status, data = active_app.handle_get_history()
                 self._send_json(status, data)
                 return
-
-            self._serve_static(parsed.path)
-
-        def do_POST(self) -> None:  # noqa: N802
-            parsed = urlparse(self.path)
-            if parsed.path != "/api/feedback":
+            if parsed.path == "/api/vocab":
+                status, data = active_app.handle_get_vocab()
+                self._send_json(status, data)
+                return
+            if parsed.path.startswith("/api/"):
                 self._send_json(
                     HTTPStatus.NOT_FOUND,
                     {"error": "요청하신 API 경로를 찾을 수 없습니다."},
                 )
                 return
 
-            content_length_Header = self.headers.get("Content-Length", "0")
-            try:
-                length = int(content_length_Header)
-            except ValueError:
-                length = 0
+            self._serve_static(parsed.path)
 
-            raw_body = self.rfile.read(max(0, min(length, MAX_BODY_BYTES + 1)))
-            status, data = active_app.handle_post_feedback(raw_body)
-            self._send_json(status, data)
+        def do_POST(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            raw_body = self._read_request_body()
+
+            if parsed.path == "/api/feedback":
+                status, data = active_app.handle_post_feedback(raw_body)
+                self._send_json(status, data)
+                return
+            if parsed.path == "/api/vocab":
+                status, data = active_app.handle_post_vocab(raw_body)
+                self._send_json(status, data)
+                return
+            if parsed.path == "/api/vocab/review":
+                status, data = active_app.handle_post_vocab_review(raw_body)
+                self._send_json(status, data)
+                return
+
+            self._send_json(
+                HTTPStatus.NOT_FOUND,
+                {"error": "요청하신 API 경로를 찾을 수 없습니다."},
+            )
+
+        def do_DELETE(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            prefix = "/api/vocab/"
+            if parsed.path.startswith(prefix):
+                item_id = unquote(parsed.path[len(prefix) :])
+                status, data = active_app.handle_delete_vocab(item_id)
+                self._send_json(status, data)
+                return
+
+            self._send_json(
+                HTTPStatus.NOT_FOUND,
+                {"error": "요청하신 API 경로를 찾을 수 없습니다."},
+            )
 
         def _serve_static(self, url_path: str) -> None:
             status, mime, body = active_app.handle_static(url_path)
