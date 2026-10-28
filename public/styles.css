@@ -11,6 +11,12 @@
   --danger-bg: #fef2f2;
   --danger-text: #b91c1c;
   --voice-active: #dc2626;
+  --success-bg: #ecfdf5;
+  --success-border: #a7f3d0;
+  --success-text: #047857;
+  --warn-bg: #fffbeb;
+  --warn-border: #fde68a;
+  --warn-text: #b45309;
 }
 
 * {
@@ -53,15 +59,77 @@ body {
 }
 
 .subtitle {
-  margin: 0;
+  margin: 0 0 18px;
   color: var(--muted);
   font-size: 0.96rem;
+}
+
+/* 상단 탭 네비게이션 */
+.top-tabs {
+  display: flex;
+  gap: 10px;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 10px;
+}
+
+.tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-size: 0.96rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tab-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.tab-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.tab-badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.tab-btn.active .tab-badge {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+
+.tab-badge.has-due {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.tab-btn.active .tab-badge.has-due {
+  background: #fde68a;
+  color: #92400e;
 }
 
 .main-grid {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.main-grid[hidden] {
+  display: none !important;
 }
 
 .card {
@@ -132,17 +200,22 @@ body {
   border-color: var(--accent-border);
 }
 
-textarea {
+textarea,
+input[type="text"] {
   width: 100%;
-  padding: 14px;
-  font-size: 1rem;
+  padding: 12px 14px;
+  font-size: 0.98rem;
   font-family: inherit;
   border: 1px solid var(--border);
   border-radius: 10px;
+}
+
+textarea {
   resize: vertical;
 }
 
-textarea:focus {
+textarea:focus,
+input[type="text"]:focus {
   outline: 2px solid var(--primary);
   border-color: transparent;
 }
@@ -173,7 +246,7 @@ textarea:focus {
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, transform 0.1s ease;
 }
 
 .btn:disabled {
@@ -223,6 +296,7 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  margin-top: 12px;
 }
 
 .highlight-card {
@@ -266,7 +340,8 @@ textarea:focus {
 
 .alternatives-list,
 .keys-list,
-.history-list {
+.history-list,
+.vocab-list {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -276,18 +351,32 @@ textarea:focus {
 }
 
 .alt-item,
-.key-item {
+.key-item,
+.vocab-item {
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: #f8fafc;
 }
 
+.item-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .alt-expr,
-.key-expr {
+.key-expr,
+.vocab-expr {
   font-weight: 700;
   font-size: 1.02rem;
   color: #0f172a;
+}
+
+.vocab-meaning {
+  font-size: 0.95rem;
+  color: #334155;
 }
 
 .alt-nuance,
@@ -301,6 +390,196 @@ textarea:focus {
 .key-example {
   font-style: italic;
   color: #334155;
+}
+
+/* [+ 단어장에 담기] 버튼 */
+.btn-save-vocab {
+  flex-shrink: 0;
+  background: var(--accent-bg);
+  color: var(--primary);
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  padding: 5px 11px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-save-vocab:hover:not(:disabled) {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.btn-save-vocab.saved {
+  background: var(--success-bg);
+  color: var(--success-text);
+  border-color: var(--success-border);
+}
+
+/* 오늘의 복습 카드 */
+.quiz-box {
+  border: 2px solid var(--accent-border);
+  background: #fcfdff;
+  border-radius: 12px;
+  padding: 18px;
+}
+
+.quiz-question {
+  margin-bottom: 14px;
+}
+
+.quiz-label {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 4px;
+}
+
+.quiz-meaning-text {
+  margin: 0;
+  font-size: 1.22rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.quiz-hint-text {
+  margin: 6px 0 0;
+  font-size: 0.92rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.quiz-reveal-row {
+  margin-top: 10px;
+}
+
+.quiz-answer-area {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+
+.quiz-example-text {
+  margin: 6px 0 0;
+  font-size: 0.94rem;
+  color: #334155;
+  font-style: italic;
+}
+
+.rating-guide {
+  margin: 12px 0 8px;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.rating-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.rating-btn {
+  padding: 11px 12px;
+  font-size: 0.9rem;
+  border: 1px solid transparent;
+}
+
+.rating-again {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  border-color: #fecaca;
+}
+
+.rating-again:hover:not(:disabled) {
+  background: #fee2e2;
+}
+
+.rating-hard {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border-color: var(--warn-border);
+}
+
+.rating-hard:hover:not(:disabled) {
+  background: #fef3c7;
+}
+
+.rating-easy {
+  background: var(--success-bg);
+  color: var(--success-text);
+  border-color: var(--success-border);
+}
+
+.rating-easy:hover:not(:disabled) {
+  background: #d1fae5;
+}
+
+/* 직접 추가 폼 */
+.vocab-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.form-field label {
+  display: block;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.form-field-full {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .vocab-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 단어장 목록 메타 및 삭제 버튼 */
+.vocab-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+
+.due-tag {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.due-tag.due-now {
+  color: var(--warn-text);
+}
+
+.vocab-stats {
+  color: var(--muted);
+}
+
+.btn-delete-vocab {
+  background: transparent;
+  color: var(--danger-text);
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-delete-vocab:hover:not(:disabled) {
+  background: var(--danger-bg);
 }
 
 .count-pill {

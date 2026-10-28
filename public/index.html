@@ -3,23 +3,46 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ImproveEnglish — AI 영작·말하기 첨삭</title>
+  <title>ImproveEnglish — AI 영작·말하기 첨삭 및 단어장 복습</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <div class="container">
     <header class="app-header">
       <div>
-        <span class="badge-brand">ImproveEnglish · 조각 1</span>
+        <span class="badge-brand">ImproveEnglish · 조각 2</span>
         <h1>AI 영작·말하기 첨삭 코치</h1>
         <p class="subtitle">
-          영어 문장(모르는 표현은 한국어로 섞어 써도 OK)을 입력하거나 마이크로 말해 보세요.
-          교정 이유부터 원어민 표현까지 3단으로 정리해 내 PC에 자동 기록합니다.
+          영어 문장(모르는 표현은 한국어로 섞어 써도 OK)을 첨삭받고, 외우고 싶은 원어민 표현을 단어장에 담아 복습 주기에 맞춰 내 것으로 만드세요.
         </p>
       </div>
+
+      <!-- 상단 화면 전환 탭 -->
+      <nav class="top-tabs" aria-label="학습 메뉴 탭">
+        <button
+          type="button"
+          id="tab-feedback-btn"
+          class="tab-btn active"
+          aria-selected="true"
+          aria-controls="panel-feedback"
+        >
+          ✨ AI 영작·말하기 첨삭
+        </button>
+        <button
+          type="button"
+          id="tab-vocab-btn"
+          class="tab-btn"
+          aria-selected="false"
+          aria-controls="panel-vocab"
+        >
+          📚 내 단어장 · 오늘의 복습
+          <span id="due-badge" class="tab-badge">오늘 복습 0</span>
+        </button>
+      </nav>
     </header>
 
-    <main class="main-grid">
+    <!-- 탭 1: AI 영작·말하기 첨삭 화면 -->
+    <main id="panel-feedback" class="main-grid">
       <!-- 입력 섹션 -->
       <section class="card input-card" aria-labelledby="input-heading">
         <div class="card-header-row">
@@ -67,6 +90,8 @@
           <span id="result-meta" class="result-meta"></span>
         </div>
 
+        <p id="vocab-toast" class="status-msg info" role="status" aria-live="polite" hidden></p>
+
         <div class="result-cards">
           <!-- ① 교정 및 이유 -->
           <article class="card result-card highlight-card">
@@ -110,6 +135,123 @@
         </p>
       </section>
     </main>
+
+    <!-- 탭 2: 내 단어장 · 오늘의 복습 화면 -->
+    <section id="panel-vocab" class="main-grid" hidden>
+      <!-- 오늘의 복습 카드 섹션 -->
+      <section class="card review-card" aria-labelledby="review-heading">
+        <div class="card-header-row">
+          <h2 id="review-heading">1. 오늘 복습할 표현 카드</h2>
+          <span id="review-progress" class="count-pill">오늘 복습 대상 0개</span>
+        </div>
+        <p class="history-guide">
+          한국어 뜻을 보고 먼저 영어 표현을 떠올려 본 뒤 <strong>[정답 보기]</strong>를 눌러 기억 난이도를 선택하세요.
+        </p>
+
+        <!-- 복습할 카드가 있을 때 -->
+        <div id="quiz-box" class="quiz-box" hidden>
+          <div class="quiz-question">
+            <span class="quiz-label">뜻 · 뉘앙스</span>
+            <p id="quiz-meaning" class="quiz-meaning-text"></p>
+            <p id="quiz-hint" class="quiz-hint-text" hidden></p>
+          </div>
+
+          <div class="quiz-reveal-row">
+            <button type="button" id="quiz-reveal-btn" class="btn btn-primary">
+              👀 정답 보기
+            </button>
+          </div>
+
+          <div id="quiz-answer-area" class="quiz-answer-area" hidden>
+            <div class="corrected-box">
+              <span class="quiz-label">정답 영어 표현</span>
+              <p id="quiz-answer-expr" class="corrected-text"></p>
+              <p id="quiz-answer-example" class="quiz-example-text"></p>
+            </div>
+
+            <p class="rating-guide">얼마나 잘 떠올랐나요? 선택하면 다음 복습 날짜가 자동 예약됩니다.</p>
+            <div class="rating-buttons">
+              <button type="button" class="btn rating-btn rating-again" data-rating="again">
+                😓 몰랐음 (1일 뒤)
+              </button>
+              <button type="button" class="btn rating-btn rating-hard" data-rating="hard">
+                🤔 헷갈림 (3일 뒤)
+              </button>
+              <button type="button" id="rating-easy-btn" class="btn rating-btn rating-easy" data-rating="easy">
+                😊 쉬웠음 (7일→14일→30일 뒤)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 복습할 카드가 없을 때 -->
+        <p id="quiz-empty" class="empty-state">
+          오늘 복습할 표현이 없습니다. 첨삭 결과에서 <strong>[+ 단어장에 담기]</strong>를 누르거나 아래에서 새 표현을 추가해 보세요!
+        </p>
+      </section>
+
+      <!-- 직접 단어 추가 섹션 -->
+      <section class="card vocab-form-card" aria-labelledby="vocab-add-heading">
+        <div class="card-header-row">
+          <h2 id="vocab-add-heading">2. 외우고 싶은 표현 직접 추가하기</h2>
+          <span class="mode-badge mode-text">오늘 바로 복습 가능</span>
+        </div>
+
+        <div class="vocab-form-grid">
+          <div class="form-field">
+            <label for="vocab-expr-input">영어 표현 (필수, 최대 200자)</label>
+            <input
+              type="text"
+              id="vocab-expr-input"
+              maxlength="200"
+              placeholder="예: get off work / call it a day"
+            />
+          </div>
+          <div class="form-field">
+            <label for="vocab-meaning-input">한국어 뜻 · 뉘앙스 (필수, 최대 300자)</label>
+            <input
+              type="text"
+              id="vocab-meaning-input"
+              maxlength="300"
+              placeholder="예: 퇴근하다, 오늘 일을 마치다"
+            />
+          </div>
+          <div class="form-field form-field-full">
+            <label for="vocab-example-input">영어 예문 (선택, 최대 500자)</label>
+            <input
+              type="text"
+              id="vocab-example-input"
+              maxlength="500"
+              placeholder="예: What time do you usually get off work?"
+            />
+          </div>
+        </div>
+
+        <div class="input-footer">
+          <span class="char-counter">중복된 영어 표현은 자동으로 안내됩니다.</span>
+          <button type="button" id="vocab-add-btn" class="btn btn-primary">
+            + 단어장에 추가
+          </button>
+        </div>
+
+        <p id="vocab-status-msg" class="status-msg" role="status" aria-live="polite" hidden></p>
+      </section>
+
+      <!-- 전체 단어장 목록 섹션 -->
+      <section class="card vocab-list-card" aria-labelledby="vocab-list-heading">
+        <div class="card-header-row">
+          <h2 id="vocab-list-heading">3. 내 전체 단어장 목록</h2>
+          <span id="vocab-total-count" class="count-pill">총 0개</span>
+        </div>
+        <p class="history-guide">
+          내 PC(<code>data/vocab-items.json</code>)에 안전하게 저장된 단어장입니다. 각 표현의 복습 횟수와 다음 복습 예정일을 확인할 수 있습니다.
+        </p>
+        <ul id="vocab-list" class="vocab-list"></ul>
+        <p id="vocab-empty" class="empty-state">
+          아직 저장된 단어·표현이 없습니다.
+        </p>
+      </section>
+    </section>
   </div>
 
   <script src="/app.js"></script>
