@@ -64,4 +64,23 @@
 - 관찰: OB-1 (`POST /api/routine/goal` 응답에서 `GET /api/routine`과 동일한 루틴 요약 스키마 전체와 `message`를 함께 반환하여 추가 요청 없이 즉시 화면을 갱신함)
 - 담당 없음: 없음
 
+## 회차 7 — `audit-data` · 조각 4 `daily-mission` (2026-10-28)
+
+- **감사한 커밋**: `d6be9e5` · 커밋 안 된 변경 포함 · **감사자**: `audit-data`
+- 기록: `docs/audit/nc-ledger-history.md`
+- 낸 것: 없음
+- 지난 회차: 회차 5 (`audit-data`, 열린 NC 및 U 없음)
+- 관찰: OB-1 (`GET /api/mission/today`는 내장 상황 미션 풀(`MISSION_POOL`)과 기존 `VocabStore`·`HistoryStore`를 읽기 전용으로 집계하므로 기존 로컬 JSON 파일(`data/vocab-items.json`, `data/feedback-history.json`, `data/routine-settings.json`)의 스키마나 쓰기 경로를 변경하지 않고 완전한 하위 호환성을 유지함)
+- 담당 없음: 없음
+
+## 회차 8 — `audit-contract` · 조각 4 `daily-mission` (2026-10-28)
+
+- **감사한 커밋**: `d6be9e5` · 커밋 안 된 변경 포함 · **감사자**: `audit-contract`
+- 기록: `docs/audit/nc-ledger-history.md`
+- 낸 것: 없음
+- 지난 회차: 회차 6 (`audit-contract`, 열린 NC 및 U 없음)
+- 관찰: OB-1 (`GET /api/mission/today` 쿼리 파라미터 `category`는 닫힌 목록(`all`, `work`, `daily`, `travel`, `opinion`)으로, `missionId`/`excludeId`는 내장 미션 ID 목록으로 엄격히 검증되며 위반 시 기존 API와 동일한 `400 Bad Request` 및 `{"error": "<한국어 메시지>"}` 규약을 따름)
+- 담당 없음: 없음
+
+
 

@@ -23,6 +23,7 @@
 | 1 | ai-feedback | 내가 쓴 영작문·말하기 문장에 대해 AI 첨삭과 자연스러운 표현 추천을 받는다 | — | 닫힘 | `docs/slices/1-ai-feedback/` |
 | 2 | vocab-review | 첨삭받은 표현과 모르는 단어를 저장하고 복습 주기에 맞춰 다시 학습한다 | ai-feedback | 닫힘 | `docs/slices/2-vocab-review/` |
 | 3 | study-routine | 매일 학습한 기록과 연속 학습 루틴을 확인하고 관리한다 | ai-feedback | 닫힘 | `docs/slices/3-study-routine/` |
+| 4 | daily-mission | 매일 상황별 영작·말하기 미션과 내 단어장의 써볼 표현을 추천받고 바로 첨삭 연습으로 이어간다 | ai-feedback · vocab-review | 닫힘 | `docs/slices/4-daily-mission/` |
 
 ## 범위 변경
 

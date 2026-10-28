@@ -87,6 +87,18 @@
   const goalSaveBtn = document.getElementById("goal-save-btn");
   const goalStatusMsg = document.getElementById("goal-status-msg");
 
+  // 조각 4: 오늘의 상황별 영작·말하기 미션 요소
+  const missionCategoryBadge = document.getElementById("mission-category-badge");
+  const missionStatusBadge = document.getElementById("mission-status-badge");
+  const missionNextBtn = document.getElementById("mission-next-btn");
+  const missionCategoryBar = document.getElementById("mission-category-bar");
+  const missionTitle = document.getElementById("mission-title");
+  const missionUseSampleBtn = document.getElementById("mission-use-sample-btn");
+  const missionSituation = document.getElementById("mission-situation");
+  const missionGuide = document.getElementById("mission-guide");
+  const missionHintsList = document.getElementById("mission-hints-list");
+  const missionVocabList = document.getElementById("mission-vocab-list");
+
   let currentInputMode = "text";
   let recognition = null;
   let isRecording = false;
@@ -99,6 +111,9 @@
 
   let routineData = null;
   let selectedDateStr = "";
+
+  let currentMissionCategory = "all";
+  let currentMissionObj = null;
 
   function normalizeExpr(str) {
     return (str || "").trim().toLowerCase();
@@ -784,6 +799,138 @@
     }
   }
 
+  function insertExpressionIntoInput(exprText) {
+    if (!exprText || !sentenceInput) return;
+    const current = sentenceInput.value;
+    if (!current.trim()) {
+      sentenceInput.value = `${exprText} `;
+    } else if (current.endsWith(" ")) {
+      sentenceInput.value = `${current}${exprText} `;
+    } else {
+      sentenceInput.value = `${current} ${exprText} `;
+    }
+    setInputMode("text");
+    updateCounter();
+    hideStatus();
+    sentenceInput.focus();
+  }
+
+  function renderMission(data) {
+    if (!data || !data.mission) return;
+    const mission = data.mission;
+    currentMissionObj = mission;
+    currentMissionCategory = data.selectedCategory || "all";
+
+    if (missionCategoryBadge) {
+      missionCategoryBadge.textContent = mission.categoryLabel || "상황 미션";
+    }
+    if (missionStatusBadge) {
+      if (data.completedToday) {
+        missionStatusBadge.textContent = "오늘 미션 완료!";
+        missionStatusBadge.className = "routine-state-badge goal-met";
+      } else {
+        missionStatusBadge.textContent = "오늘 미션 대기 중";
+        missionStatusBadge.className = "routine-state-badge";
+      }
+    }
+
+    if (missionCategoryBar) {
+      missionCategoryBar.querySelectorAll(".mission-cat-btn").forEach((btn) => {
+        const cat = btn.getAttribute("data-category");
+        btn.classList.toggle("active", cat === currentMissionCategory);
+      });
+    }
+
+    if (missionTitle) {
+      missionTitle.textContent = mission.title || "";
+    }
+    if (missionSituation) {
+      missionSituation.textContent = mission.situation || "";
+    }
+    if (missionGuide) {
+      missionGuide.textContent = mission.guide || "";
+    }
+
+    if (missionHintsList) {
+      missionHintsList.innerHTML = "";
+      (mission.hints || []).forEach((hint) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "mission-expr-chip";
+        const en = document.createElement("span");
+        en.className = "mission-chip-en";
+        en.textContent = hint.expression;
+        const ko = document.createElement("span");
+        ko.className = "mission-chip-ko";
+        ko.textContent = ` · ${hint.meaning}`;
+        btn.appendChild(en);
+        btn.appendChild(ko);
+        btn.addEventListener("click", () => {
+          insertExpressionIntoInput(hint.expression);
+        });
+        missionHintsList.appendChild(btn);
+      });
+    }
+
+    if (missionVocabList) {
+      missionVocabList.innerHTML = "";
+      const suggestions = data.vocabSuggestions || [];
+      if (!suggestions.length) {
+        const emptySpan = document.createElement("span");
+        emptySpan.className = "mission-vocab-empty";
+        emptySpan.textContent =
+          "아직 내 단어장에 담긴 표현이 없습니다. 첨삭 결과에서 [+ 단어장에 담기]를 누르면 이곳에 오늘 써볼 표현으로 추천됩니다.";
+        missionVocabList.appendChild(emptySpan);
+      } else {
+        suggestions.forEach((item) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = item.isDue
+            ? "mission-expr-chip vocab-due-chip"
+            : "mission-expr-chip vocab-saved-chip";
+          const en = document.createElement("span");
+          en.className = "mission-chip-en";
+          en.textContent = item.expression;
+          const ko = document.createElement("span");
+          ko.className = "mission-chip-ko";
+          ko.textContent = item.isDue
+            ? ` · ${item.meaning} (복습 대상)`
+            : ` · ${item.meaning}`;
+          btn.appendChild(en);
+          btn.appendChild(ko);
+          btn.addEventListener("click", () => {
+            insertExpressionIntoInput(item.expression);
+          });
+          missionVocabList.appendChild(btn);
+        });
+      }
+    }
+  }
+
+  async function fetchMission(options) {
+    const opts = options || {};
+    const category =
+      opts.category !== undefined ? opts.category : currentMissionCategory;
+    const params = new URLSearchParams();
+    if (category) {
+      params.set("category", category);
+    }
+    if (opts.missionId) {
+      params.set("missionId", opts.missionId);
+    }
+    if (opts.excludeId) {
+      params.set("excludeId", opts.excludeId);
+    }
+    try {
+      const res = await fetch(`/api/mission/today?${params.toString()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      renderMission(data);
+    } catch (_) {
+      // 초기 로드 실패 시 무시
+    }
+  }
+
   async function submitDailyGoal() {
     const fbGoal = parseInt(goalFeedbackInput.value, 10);
     const rvGoal = parseInt(goalReviewInput.value, 10);
@@ -839,6 +986,10 @@
       if (lastRenderedRecord) {
         renderRecord(lastRenderedRecord);
       }
+      await fetchMission({
+        category: currentMissionCategory,
+        missionId: currentMissionObj ? currentMissionObj.id : undefined,
+      });
     } catch (_) {
       // 초기 로드 실패 시 무시
     }
@@ -977,6 +1128,10 @@
       renderRecord(data);
       await fetchHistory();
       await fetchRoutine();
+      await fetchMission({
+        category: currentMissionCategory,
+        missionId: currentMissionObj ? currentMissionObj.id : undefined,
+      });
     } catch (_) {
       showStatus("서버와 통신할 수 없습니다. 서버가 실행 중인지 확인해 주세요.", "error");
     } finally {
@@ -1049,6 +1204,36 @@
   if (goalSaveBtn) {
     goalSaveBtn.addEventListener("click", submitDailyGoal);
   }
+  if (missionCategoryBar) {
+    missionCategoryBar.querySelectorAll(".mission-cat-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const cat = btn.getAttribute("data-category") || "all";
+        currentMissionCategory = cat;
+        fetchMission({ category: cat });
+      });
+    });
+  }
+  if (missionNextBtn) {
+    missionNextBtn.addEventListener("click", () => {
+      fetchMission({
+        category: currentMissionCategory,
+        excludeId: currentMissionObj ? currentMissionObj.id : undefined,
+      });
+    });
+  }
+  if (missionUseSampleBtn) {
+    missionUseSampleBtn.addEventListener("click", () => {
+      if (!currentMissionObj) return;
+      sentenceInput.value =
+        currentMissionObj.sampleSentence ||
+        currentMissionObj.starterTemplate ||
+        "";
+      setInputMode("text");
+      updateCounter();
+      hideStatus();
+      sentenceInput.focus();
+    });
+  }
 
   if (vocabToastGoBtn) {
     vocabToastGoBtn.addEventListener("click", () => {
@@ -1119,4 +1304,5 @@
   fetchVocab();
   fetchHistory();
   fetchRoutine();
+  fetchMission();
 })();

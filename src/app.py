@@ -11,7 +11,7 @@ import mimetypes
 import os
 import pathlib
 from typing import Callable
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import src.gemini as gemini_module
 from src.feedback_types import (
@@ -22,6 +22,7 @@ from src.feedback_types import (
 )
 from src.gemini import GeminiServiceError, generate_feedback, load_dotenv_file
 from src.history_store import HistoryStore
+from src.mission_service import build_daily_mission_status
 from src.routine_store import RoutineStore
 from src.routine_types import DailyGoal
 from src.vocab_store import VocabStore
@@ -234,6 +235,29 @@ class FeedbackApp:
             "message": "하루 학습 목표가 저장되었습니다.",
         }
 
+    def handle_get_mission_today(
+        self,
+        category: str | None = None,
+        mission_id: str | None = None,
+        exclude_id: str | None = None,
+        today: date | None = None,
+    ) -> tuple[int, dict[str, object]]:
+        """오늘의 상황별 미션, 내 단어장 추천 표현(최대 2개), 오늘 미션 완료 여부를 반환한다([M1]~[M3])."""
+        try:
+            records = self.store.list_records()
+            vocab_items = self.vocab_store.list_items()
+            result = build_daily_mission_status(
+                feedback_records=records,
+                vocab_items=vocab_items,
+                category=category,
+                mission_id=mission_id,
+                exclude_id=exclude_id,
+                today=today,
+            )
+        except ValidationError as exc:
+            return HTTPStatus.BAD_REQUEST, {"error": str(exc)}
+        return HTTPStatus.OK, result
+
     def handle_static(self, url_path: str) -> tuple[int, str, bytes]:
         """정적 웹 화면 파일(index.html, app.js, styles.css)을 읽고 경로 탐색 공격을 차단한다."""
         rel_path = "index.html" if url_path in ("", "/") else url_path.lstrip("/")
@@ -284,6 +308,18 @@ def create_http_server(
                 return
             if parsed.path == "/api/routine":
                 status, data = active_app.handle_get_routine()
+                self._send_json(status, data)
+                return
+            if parsed.path == "/api/mission/today":
+                qs = parse_qs(parsed.query, keep_blank_values=True)
+                category = qs["category"][0] if "category" in qs else None
+                mission_id = qs["missionId"][0] if "missionId" in qs else None
+                exclude_id = qs["excludeId"][0] if "excludeId" in qs else None
+                status, data = active_app.handle_get_mission_today(
+                    category=category,
+                    mission_id=mission_id,
+                    exclude_id=exclude_id,
+                )
                 self._send_json(status, data)
                 return
             if parsed.path.startswith("/api/"):

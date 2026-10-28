@@ -1185,6 +1185,205 @@ input[type="number"]:focus {
   padding: 0.75rem 0.9rem;
 }
 
+/* 조각 4: 오늘의 영작·말하기 미션 카드 */
+.mission-card {
+  border-left: 3px solid var(--primary);
+  background: var(--surface);
+}
+
+.mission-title-wrap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.mission-header-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.btn-mission-refresh {
+  background: var(--surface-subtle);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.btn-mission-refresh:hover {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.mission-category-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.95rem;
+}
+
+.mission-cat-btn {
+  background: var(--surface-subtle);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.28rem 0.78rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.mission-cat-btn:hover:not(.active) {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.mission-cat-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.mission-body-box {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1.05rem 1.2rem;
+}
+
+.mission-topic-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 0.45rem;
+}
+
+.mission-topic-title {
+  font-size: 1.04rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.btn-mission-starter {
+  background: var(--accent-bg);
+  color: var(--primary);
+  border: 1px solid var(--accent-border);
+  border-radius: 5px;
+  padding: 0.26rem 0.68rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.btn-mission-starter:hover {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.mission-situation-text {
+  margin: 0 0 0.35rem;
+  font-size: 0.94rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mission-guide-text {
+  margin: 0 0 0.85rem;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.mission-chip-group {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border);
+}
+
+.mission-vocab-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.7rem 0.85rem;
+  margin-top: 0.75rem;
+}
+
+.mission-chip-label {
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 0.45rem;
+}
+
+.mission-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.mission-expr-chip {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.28rem 0.65rem;
+  font-size: 0.84rem;
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.mission-expr-chip:hover {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--primary);
+}
+
+.mission-expr-chip.vocab-due-chip {
+  background: var(--warm-bg);
+  border-color: var(--warm-border);
+  color: var(--warm-text);
+}
+
+.mission-expr-chip.vocab-saved-chip {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--primary);
+}
+
+.mission-chip-en {
+  font-family: var(--font-serif);
+  font-weight: 600;
+}
+
+.mission-chip-ko {
+  font-family: var(--font-sans);
+  font-size: 0.79rem;
+  color: var(--muted);
+}
+
+.mission-vocab-empty {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
 @media (forced-colors: active) {
   .card,
   .routine-banner,

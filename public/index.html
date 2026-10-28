@@ -74,6 +74,59 @@
 
     <!-- 탭 1: AI 영작·말하기 첨삭 화면 -->
     <main id="panel-feedback" class="main-grid">
+      <!-- 조각 4: 오늘의 상황별 영작·말하기 미션 카드 -->
+      <section id="mission-card" class="card mission-card" aria-labelledby="mission-heading">
+        <div class="card-header-row">
+          <div class="mission-title-wrap">
+            <h2 id="mission-heading" tabindex="-1"><span class="sec-num">00</span> 오늘의 영작·말하기 미션</h2>
+            <span id="mission-category-badge" class="mode-badge mode-text">비즈니스 · 업무</span>
+          </div>
+          <div class="mission-header-actions">
+            <span id="mission-status-badge" class="routine-state-badge">오늘 미션 대기 중</span>
+            <button type="button" id="mission-next-btn" class="btn-mission-refresh">
+              다른 미션 보기 ↻
+            </button>
+          </div>
+        </div>
+
+        <!-- 상황 카테고리 선택 버튼 -->
+        <div id="mission-category-bar" class="mission-category-bar" role="group" aria-label="미션 상황 카테고리 선택">
+          <button type="button" class="mission-cat-btn active" data-category="all">전체 상황</button>
+          <button type="button" class="mission-cat-btn" data-category="work">비즈니스 · 업무</button>
+          <button type="button" class="mission-cat-btn" data-category="daily">일상 대화</button>
+          <button type="button" class="mission-cat-btn" data-category="travel">여행 · 외출</button>
+          <button type="button" class="mission-cat-btn" data-category="opinion">감정 · 의견 표현</button>
+        </div>
+
+        <!-- 미션 본문 박스 -->
+        <div class="mission-body-box">
+          <div class="mission-topic-row">
+            <strong id="mission-title" class="mission-topic-title">일정 조율 · 회의 시간 미루기</strong>
+            <button type="button" id="mission-use-sample-btn" class="btn-mission-starter">
+              이 미션 예문으로 시작하기 →
+            </button>
+          </div>
+          <p id="mission-situation" class="mission-situation-text">
+            급한 업무가 생겨 오늘 오후 회의를 내일로 미룰 수 있는지 동료에게 정중하게 물어보는 상황입니다.
+          </p>
+          <p id="mission-guide" class="mission-guide-text">
+            회의를 미루고 싶은 이유와 대안 시간을 넣어 한 문장으로 적어 보세요(모르는 단어는 한국어로 섞어도 됩니다).
+          </p>
+
+          <!-- 상황별 기본 힌트 표현 -->
+          <div class="mission-chip-group">
+            <span class="mission-chip-label">상황 힌트 표현 (클릭하면 아래 입력창에 들어갑니다)</span>
+            <div id="mission-hints-list" class="mission-chip-list"></div>
+          </div>
+
+          <!-- 내 단어장에서 뽑은 오늘 써볼 추천 표현 -->
+          <div id="mission-vocab-group" class="mission-chip-group mission-vocab-box">
+            <span class="mission-chip-label">오늘 문장에 써볼 내 단어장 표현 (복습 예정 우선)</span>
+            <div id="mission-vocab-list" class="mission-chip-list"></div>
+          </div>
+        </div>
+      </section>
+
       <!-- 입력 섹션 -->
       <section class="card input-card" aria-labelledby="input-heading">
         <div class="card-header-row">
