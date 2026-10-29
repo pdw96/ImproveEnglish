@@ -1235,13 +1235,18 @@
   function hideVoiceInterim() {
     if (!voiceInterim) return;
     voiceInterim.textContent = "";
+    voiceInterim.classList.remove("is-listening");
     voiceInterim.hidden = true;
   }
 
+  // 확정 전 글자를 보인다. 글자가 없어도 듣는 중이면 「듣는 중…」을 보여 마이크가 켜져 있음을 알린다
+  // (Android 는 확정 전 글자를 확정 직전에만 보내 미리보기가 거의 보이지 않는다 — 설계 끝 덧붙임).
   function showVoiceInterim(text) {
     if (!voiceInterim) return;
-    voiceInterim.textContent = text;
-    voiceInterim.hidden = !text;
+    const listening = keepListening || isRecording || isStarting;
+    voiceInterim.textContent = text || (listening ? "듣는 중…" : "");
+    voiceInterim.classList.toggle("is-listening", !text && listening);
+    voiceInterim.hidden = !voiceInterim.textContent;
   }
 
   // 확정된 문장을 입력창 끝에 붙인다. 1,000자를 넘는 부분은 붙이지 않고 false 를 돌려준다.
@@ -1285,27 +1290,6 @@
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
-    // 진단(임시) — 주소에 ?voice-debug 가 있을 때만 브라우저가 보낸 음성 인식 기록을 입력창 아래에 보인다.
-    // 화면에만 보이고 저장하거나 보내지 않는다. Android 미리보기 원인을 확인한 뒤 뺀다(설계 끝 덧붙임).
-    const voiceDebugEl = /[?&]voice-debug\b/.test(window.location.search) ? document.createElement("pre") : null;
-    const voiceDebugT0 = Date.now();
-    if (voiceDebugEl) {
-      voiceDebugEl.id = "voice-debug-log";
-      voiceDebugEl.className = "voice-debug-log";
-      (voiceInterim || sentenceInput).insertAdjacentElement("afterend", voiceDebugEl);
-    }
-    function voiceDebug(line) {
-      if (!voiceDebugEl) return;
-      const sec = ((Date.now() - voiceDebugT0) / 1000).toFixed(1);
-      const lines = `${voiceDebugEl.textContent}${sec}s ${line}\n`.split("\n");
-      voiceDebugEl.textContent = lines.slice(-60).join("\n");
-      voiceDebugEl.scrollTop = voiceDebugEl.scrollHeight;
-    }
-    if (voiceDebugEl) {
-      ["audiostart", "speechstart", "speechend", "audioend", "nomatch"].forEach((name) => {
-        recognition.addEventListener(name, () => voiceDebug(name));
-      });
-    }
 
     // 말소리 없이 브라우저가 연달아 이만큼 끝내면 다시 켜지 않고 멈춘다(폰의 시작음이 끝없이 나지 않게).
     const VOICE_IDLE_RESTART_LIMIT = 3;
@@ -1421,7 +1405,6 @@
     }
 
     recognition.addEventListener("start", () => {
-      voiceDebug(`start keep=${keepListening}`);
       isStarting = false;
       isRecording = true;
       // start 를 기다리는 사이에 멈춤을 눌렀으면 켜지 않고 바로 끝낸다.
@@ -1435,6 +1418,7 @@
       committedThisSession = false;
       voiceBtn.textContent = "말하기 종료";
       voiceBtn.classList.add("recording");
+      showVoiceInterim("");
       if (!endNoticeShown) {
         showStatus(
           "영어로 말씀해 주세요. 쉬었다 이어 말해도 됩니다. 다 말했으면 [말하기 종료]를 눌러 주세요.",
@@ -1444,16 +1428,6 @@
     });
 
     recognition.addEventListener("result", (event) => {
-      if (voiceDebugEl) {
-        const parts = [];
-        for (let i = 0; i < event.results.length; i += 1) {
-          const r = event.results[i];
-          const a = r[0] || {};
-          const c = typeof a.confidence === "number" ? a.confidence.toFixed(2) : "-";
-          parts.push(`[${i}] ${r.isFinal ? "F" : "i"} c=${c} "${a.transcript || ""}"`);
-        }
-        voiceDebug(`result idx=${event.resultIndex} n=${event.results.length} ${parts.join(" | ")}`);
-      }
       // 미리보기는 매번 남은 확정 전 결과 전부로 다시 만든다 — 바뀐 결과(resultIndex)부터만 보면 앞의 확정 전
       // 글자가 빠진다. 확정 결과는 번호로 한 번만 붙이므로 처음부터 다시 훑어도 겹치지 않는다.
       pendingResults = [];
@@ -1481,7 +1455,6 @@
 
     recognition.addEventListener("error", (event) => {
       const code = event && event.error;
-      voiceDebug(`error ${code}`);
       // 말이 없어서(no-speech) · 끊어서(aborted) 끝난 것은 오류로 알리지 않는다 — 끝나면 다시 켠다.
       if (!FATAL_ERRORS.has(code)) return;
       keepListening = false;
@@ -1494,13 +1467,13 @@
     });
 
     recognition.addEventListener("end", () => {
-      voiceDebug(`end keep=${keepListening}`);
       isRecording = false;
       isStarting = false;
       // 확정이 오지 않은 채 끝났으면 남은 확정 전 글자를 붙여 잃지 않는다(Android 에서 confidence 0 만 오는 경우).
       if (pendingResults.length) flushPending("");
       pendingResults = [];
-      hideVoiceInterim();
+      // 다시 켤 동안에는 「듣는 중…」을 그대로 두고, 끝나면 finishListeningUi 가 숨긴다.
+      showVoiceInterim("");
       idleSessions = committedThisSession ? 0 : idleSessions + 1;
       if (keepListening && idleSessions >= VOICE_IDLE_RESTART_LIMIT) {
         keepListening = false;
