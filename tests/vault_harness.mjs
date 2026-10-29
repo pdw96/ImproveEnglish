@@ -165,6 +165,21 @@ let openSession;
   out.cleared = state(w);
 }
 
+// 금고를 푼 창에서 비밀번호 없이 다른 키로 바꾼 뒤 새로고침 — 새 키가 쓰여야 한다 (NC-1)
+{
+  const NEW_KEY = "TEST-ONLY-replaced-key-2222222222";
+  const w = openWindow(deviceLocal, openSession);
+  await w.engine.saveApiKeyWithPin(NEW_KEY, "");
+  const after = state(w);
+  const reloaded = openWindow(w.ctx.localStorage.dump(), w.ctx.sessionStorage.dump());
+  out.replacedPlain = {
+    NEW_KEY,
+    ...after,
+    reloadedMasked: reloaded.engine.getMaskedApiKey(),
+    reloadedFeedback: await askFeedback(reloaded),
+  };
+}
+
 // 백업 파일
 {
   const w = openWindow(deviceLocal, openSession);

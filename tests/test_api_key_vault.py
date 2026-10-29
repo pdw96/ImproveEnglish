@@ -134,6 +134,18 @@ class TestSlice6VaultEngine(unittest.TestCase):
         self.assertFalse(plain["isEncrypted"])
         self.assertTrue(plain["isUnlocked"])
 
+    def test_v5_plain_save_after_unlock_replaces_old_key(self) -> None:
+        """[V5 · NC-1] 금고를 푼 창에서 빈 비밀번호로 다른 키를 저장하면 창에 남은 옛 키가 지워지고, 새로고침 뒤에도 새 키가 쓰인다."""
+        replaced = self.out["replacedPlain"]
+        new_key = replaced["NEW_KEY"]
+        self.assertEqual(replaced["local"], {PLAIN: new_key})
+        self.assertEqual(replaced["session"], {})
+        self.assertTrue(replaced["reloadedMasked"].endswith(new_key[-4:]))
+        calls = replaced["reloadedFeedback"]["geminiCalls"]
+        self.assertGreaterEqual(len(calls), 1)
+        for call in calls:
+            self.assertEqual(call["apiKeyHeader"], new_key)
+
     def test_v6_clear_removes_all_five_values(self) -> None:
         """[V6] 키 삭제는 평문 키 · 암호문 · 소금 · 초기값 · 해제 상태를 모두 지운다."""
         cleared = self.out["cleared"]

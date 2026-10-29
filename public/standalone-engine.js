@@ -63,6 +63,10 @@
       localStorage.removeItem(STORAGE_KEYS.API_KEY_SALT);
       localStorage.removeItem(STORAGE_KEYS.API_KEY_IV);
       localStorage.removeItem(STORAGE_KEYS.API_KEY_ENCRYPTED);
+      // 앞서 금고를 풀어 창에 남은 옛 키를 지운다 — 남기면 새로고침 뒤 새 키 대신 옛 키가 쓰인다 (NC-1)
+      try {
+        sessionStorage.removeItem(SESSION_KEY);
+      } catch (_) {}
       inMemoryDecryptedKey = rawApiKey;
       return;
     }
