@@ -1262,19 +1262,32 @@
         : "btn btn-secondary";
     }
 
-    const hasKey = engine.hasApiKey();
+    // 키 상태는 셋 — 쓸 수 있음(평문 보관 또는 금고 해제) · 금고 잠김 · 키 없음
+    const keyState = engine.isUnlocked()
+      ? "ready"
+      : engine.isEncrypted()
+      ? "locked"
+      : "none";
     if (apikeyStatusBadge) {
-      apikeyStatusBadge.textContent = hasKey
-        ? "개인 Gemini API 키 연결됨"
-        : "내장 스마트 코치 동작 중";
-      apikeyStatusBadge.className = hasKey
-        ? "routine-state-badge goal-met"
-        : "mode-badge mode-text";
+      apikeyStatusBadge.textContent = {
+        ready: "개인 Gemini API 키 연결됨",
+        locked: "금고 잠김 — 비밀번호로 해제",
+        none: "내장 스마트 코치 동작 중",
+      }[keyState];
+      apikeyStatusBadge.className =
+        keyState === "ready"
+          ? "routine-state-badge goal-met"
+          : keyState === "locked"
+          ? "mode-badge mode-voice"
+          : "mode-badge mode-text";
     }
     if (apikeyMaskedHint) {
-      apikeyMaskedHint.textContent = hasKey
-        ? `현재 기기에 저장된 키: ${engine.getMaskedApiKey()}`
-        : "현재 기기에 저장된 API 키가 없습니다 (내장 스마트 코치 사용 중).";
+      apikeyMaskedHint.textContent = {
+        ready: `현재 기기에 저장된 키: ${engine.getMaskedApiKey()}`,
+        locked:
+          "금고가 잠겨 있습니다. 비밀번호 칸에 비밀번호만 넣고 저장 버튼을 누르면 풀립니다 (잠긴 동안 첨삭은 내장 스마트 코치가 합니다).",
+        none: "현재 기기에 저장된 API 키가 없습니다 (내장 스마트 코치 사용 중).",
+      }[keyState];
     }
 
     const stats = engine.getLocalStats();
@@ -1351,6 +1364,13 @@
 
         if (!val) {
           showApikeyStatus("저장할 Gemini API 키를 입력해 주세요.", "error");
+          return;
+        }
+        if (pin && pin.length < engine.MIN_PIN_LENGTH) {
+          showApikeyStatus(
+            `금고 비밀번호는 ${engine.MIN_PIN_LENGTH}자 이상으로 넣어 주세요. 비밀번호 없이 저장하려면 비밀번호 칸을 비워 두세요.`,
+            "error"
+          );
           return;
         }
         await engine.saveApiKeyWithPin(val, pin);

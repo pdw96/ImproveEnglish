@@ -22,6 +22,7 @@
   };
 
   const SESSION_KEY = "ie_gemini_api_key_session";
+  const MIN_PIN_LENGTH = 4; // 설정 화면 안내 문구(「4자리 이상」)와 같은 값
 
   // 메모리 상에 보관되는 복호화된 키 (세션 스토리지와 연동되어 새로고침 후에도 탭이 열려 있는 동안 유지)
   let inMemoryDecryptedKey = (function () {
@@ -1304,13 +1305,19 @@
       }
       return "";
     },
+    MIN_PIN_LENGTH,
     async saveApiKeyWithPin(rawKey, pin) {
       const cleaned = (rawKey || "").trim();
       if (!cleaned) {
         this.clearApiKey();
         return false;
       }
-      await encryptApiKeyWithPin(cleaned, (pin || "").trim());
+      const cleanedPin = (pin || "").trim();
+      // 1 ~ 3자 비밀번호는 거절하고 저장 값을 건드리지 않는다 (빈 비밀번호는 평문 보관)
+      if (cleanedPin && cleanedPin.length < MIN_PIN_LENGTH) {
+        return false;
+      }
+      await encryptApiKeyWithPin(cleaned, cleanedPin);
       return true;
     },
     async unlockWithPin(pin) {
