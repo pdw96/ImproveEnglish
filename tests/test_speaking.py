@@ -129,10 +129,14 @@ class TestSlice7SpeakingPracticePR2(unittest.TestCase):
         self.assertRegex(APP_JS, r'li\.addEventListener\("click", \(\) => \{[\s\S]{0,80}renderRecord\(item\)')
 
     def test_p6_mic_start_stops_speaking_first(self) -> None:
-        """[P6] 마이크를 켜면 읽던 소리를 먼저 멈춘다."""
+        """[P6] 마이크를 켜면 읽던 소리를 먼저 멈추고, 듣는 중에 [듣기]를 누르면 말하기를 먼저 끝낸다(설계 끝 덧붙임)."""
         block = speech_block()
         self.assertRegex(block, r"stopSpeaking\(\);\s*try \{\s*recognition\.start\(\)")
         self.assertNotRegex(block, r"recognition\.start\(\);[\s\S]{0,40}stopSpeaking\(\)")
+        speak = function_body("speakEnglish")
+        # 읽기 전에 듣기를 끝낸다 — abort() 는 말한 글을 버리므로 쓰지 않는다
+        self.assertRegex(speak, r"if \(isRecording && recognition\) recognition\.stop\(\);[\s\S]*speechSynthesis\.speak\(")
+        self.assertNotIn("recognition.abort()", speak)
 
     def test_p7_no_listen_button_without_speech_synthesis(self) -> None:
         """[P7] 음성 합성이 없거나 읽을 글이 비면 [듣기]를 그리지 않고, 나머지(단어장 담기)는 그대로 그린다."""

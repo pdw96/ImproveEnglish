@@ -349,6 +349,9 @@
 
   function speakEnglish(text) {
     if (!canSpeak) return;
+    // 듣는 중이면 말하기를 먼저 끝낸다 — 스피커 소리를 내 말로 알아듣고 입력창에 붙이지 않게.
+    // stop() 은 그때까지 말한 글을 확정해 남긴다.
+    if (isRecording && recognition) recognition.stop();
     stopSpeaking();
     const utterance = new window.SpeechSynthesisUtterance(text);
     utterance.lang = "en-US";
