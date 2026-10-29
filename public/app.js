@@ -1370,7 +1370,11 @@
       const list = pendingResults;
       pendingResults = [];
       for (const p of list) {
-        if (covering && covers(covering, normalizeVoice(p.transcript))) continue;
+        if (covering && covers(covering, normalizeVoice(p.transcript))) {
+          // 덮인 결과는 그 확정 결과로 붙은 셈이다 — 다음 이벤트에 다시 와도 붙지 않게 기록한다.
+          committedByIndex.set(p.i, covering);
+          continue;
+        }
         if (!commitIndex(p.i, p.transcript)) return false;
       }
       return true;
