@@ -1,4 +1,4 @@
-"""조각 7(speaking-practice) 정적 시험 — 설계 ② 보장 [P1] ~ [P4](PR 1) · [P5] ~ [P7](PR 2) · 설계 끝 덧붙임 [P8] · [P9](PR 3) · [P10] · 임시 진단 빼기(PR 5) · 감사 회차 15 고침(PR 6).
+"""조각 7(speaking-practice) 정적 시험 — 설계 ② 보장 [P1] ~ [P4](PR 1) · [P5] ~ [P7](PR 2) · 설계 끝 덧붙임 [P8] · [P9](PR 3) · [P10] · 임시 진단 빼기(PR 5) · 감사 회차 15 · 16 고침(PR 6).
 
 이 레포 시험은 Python 이라 브라우저 음성 기능을 돌리지 못한다. `public/app.js` · `public/index.html` 을 읽어
 보장마다 「있어야 할 장치」와 「없어야 할 옛 장치」를 함께 본다. 실제 동작은 PR 마다 Chromium 화면 확인으로 본다(설계 ⑤).
@@ -208,8 +208,12 @@ class TestSlice7SpeakingPracticePR3(unittest.TestCase):
         self.assertRegex(end, r"idleSessions >= VOICE_IDLE_RESTART_LIMIT\) \{\s*keepListening = false;[\s\S]*?if \(!endNoticeShown\) \{")
         self.assertNotIn("!endNoticeShown && !addedThisListen", self.block)
         # 시작을 거절당하면 듣지 않은 상태로 되돌린다(감사 회차 15 담당 없음)
-        click_catch = click[click.index("} catch (_) {"):]
-        self.assertRegex(click_catch, r"isStarting = false;\s*keepListening = false;[\s\S]*?finishListeningUi\(\);")
+        fail = function_body_in(self.block, "failStart")
+        self.assertRegex(fail, r"isStarting = false;\s*keepListening = false;\s*endNoticeShown = true;\s*showStatus\(\"마이크를 켜지 못했습니다[\s\S]*?finishListeningUi\(\);")
+        # 버튼으로 켤 때도, 쉬는 동안 다시 켤 때도 같은 처리를 쓴다(감사 회차 16 NC-8)
+        self.assertRegex(click[click.index("} catch (_) {"):], r"^\} catch \(_\) \{\s*failStart\(\);")
+        self.assertRegex(end, r"recognition\.start\(\);\s*\} catch \(_\) \{\s*failStart\(\);")
+        self.assertEqual(self.block.count("failStart();"), 2)
 
     def test_p9_android_zero_confidence_is_interim_and_not_lost(self) -> None:
         """[P9] isFinal 이어도 confidence 가 0 이면 확정 전으로 미리보기에 두고, 확정 없이 끝나면 그 글을 붙인다. 같은 문장은 한 번만."""

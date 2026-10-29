@@ -1331,6 +1331,16 @@
       }
     };
 
+    // 브라우저가 듣기 시작을 거절했다 — 버튼으로 켤 때든 쉬는 동안 다시 켤 때든 듣지 않은 상태로 되돌리고
+    // 안내한다. 다음 누름은 다시 「시작」이다(설계 끝 「감사 회차 15 뒤 덧붙임」).
+    function failStart() {
+      isStarting = false;
+      keepListening = false;
+      endNoticeShown = true;
+      showStatus("마이크를 켜지 못했습니다. 잠시 뒤 [마이크로 말하기]를 다시 눌러 주세요.", "error");
+      finishListeningUi();
+    }
+
     // 확정된 문장을 입력창에 붙인다. 1,000자에 닿으면 듣기를 끝내고 false 를 돌려준다.
     // fullKey 는 transcript 가 늘어난 부분만일 때 그 결과의 전체 글 — 다음 누적 결과를 알아보는 기준으로 남긴다.
     function commitVoice(transcript, fullKey) {
@@ -1490,9 +1500,7 @@
             isStarting = true;
             recognition.start();
           } catch (_) {
-            isStarting = false;
-            keepListening = false;
-            finishListeningUi();
+            failStart();
           }
         }, VOICE_RESTART_DELAY_MS);
         return;
@@ -1519,12 +1527,7 @@
         isStarting = true;
         recognition.start();
       } catch (_) {
-        // 브라우저가 시작을 거절했다 — 듣지 않은 상태로 되돌려, 다음 누름이 다시 「시작」이 되게 한다.
-        isStarting = false;
-        keepListening = false;
-        endNoticeShown = true;
-        showStatus("마이크를 켜지 못했습니다. 잠시 뒤 [마이크로 말하기]를 다시 눌러 주세요.", "error");
-        finishListeningUi();
+        failStart();
       }
     });
   }
