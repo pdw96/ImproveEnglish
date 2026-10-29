@@ -1373,7 +1373,21 @@
           );
           return;
         }
-        await engine.saveApiKeyWithPin(val, pin);
+        // 저장소가 가득 찼거나 https 가 아닌 주소라 암호 기능이 없으면 저장이 예외로 끝난다 — 조용히 넘기지 않고 알린다
+        let saved = false;
+        try {
+          saved = await engine.saveApiKeyWithPin(val, pin);
+        } catch (_) {
+          saved = false;
+        }
+        if (!saved) {
+          renderStandaloneSettings();
+          showApikeyStatus(
+            "키를 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요 (https 주소로 열었는지, 기기 저장 공간이 남아 있는지 확인해 주세요).",
+            "error"
+          );
+          return;
+        }
         if (settingsApikeyInput) settingsApikeyInput.value = "";
         if (settingsPinInput) settingsPinInput.value = "";
         renderStandaloneSettings();

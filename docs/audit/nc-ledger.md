@@ -84,11 +84,10 @@
 
 ## 부적합
 
-**다음 번호: NC-2 · U-3**
+**다음 번호: NC-3 · U-3**
 
 | NC | 무엇 | 낸 회차 | 담당 | 심각도 | 상태 | 판정과 근거 |
 |---|---|---|---|---|---|---|
-| NC-1 | 금고를 푼 창에서 비밀번호 없이 새 키를 저장해도 옛 해제 키가 `sessionStorage`(`ie_gemini_api_key_session`)에 남아, 새로고침 뒤 새 키 대신 옛 키가 Gemini 에 가고 설정 탭에도 옛 키 끝 4자가 보인다(`public/standalone-engine.js` 평문 갈래) | 회차 12 | `audit-secrets` | 낮음 | 고침 | 저자 판정 고침(2026-10-29) — 조각 api-key-vault 안. 평문 갈래에서 세션 값을 지우고, 시험 `test_v5_plain_save_after_unlock_replaces_old_key` 를 더했다(설계 끝 2026-10-29 항목의 PR 2). 담당 `audit-secrets` 재감사가 닫는다 |
 
 ## 확인불가
 

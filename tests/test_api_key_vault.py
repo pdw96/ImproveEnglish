@@ -179,14 +179,24 @@ class TestSlice6VaultScreen(unittest.TestCase):
     def test_v5_screen_rejects_short_pin_before_saving(self) -> None:
         """[V5] 저장 버튼이 짧은 비밀번호를 엔진에 넘기기 전에 안내하고 멈춘다."""
         guard = self.app.index("pin.length < engine.MIN_PIN_LENGTH")
-        save = self.app.index("await engine.saveApiKeyWithPin(val, pin)")
+        save = self.app.index("saved = await engine.saveApiKeyWithPin(val, pin)")
         self.assertLess(guard, save)
+
+    def test_save_failure_is_shown_not_swallowed(self) -> None:
+        """저장이 예외로 끝나면 성공 문구 대신 실패 안내를 보이고 멈춘다(회차 13 담당 없음 항목, 저자 판정 2026-10-29)."""
+        start = self.app.index("saved = await engine.saveApiKeyWithPin(val, pin)")
+        try_pos = self.app.rindex("try {", 0, start)
+        self.assertLess(start - try_pos, 80, "저장 호출이 try 안에 있어야 한다")
+        failure = self.app.index("키를 저장하지 못했습니다", start)
+        success = self.app.index("안전하게 저장되었습니다", start)
+        self.assertLess(failure, success)
+        self.assertIn("if (!saved) {", self.app[start:failure])
 
     def test_input_branches_of_settings_form(self) -> None:
         """설계 ③ — 해제 갈래(키 없이 비밀번호만)와 빈 입력 안내가 저장 갈래보다 먼저 있다."""
         unlock = self.app.index("if (!val && engine.isEncrypted() && pin)")
         empty = self.app.index("저장할 Gemini API 키를 입력해 주세요.")
-        save = self.app.index("await engine.saveApiKeyWithPin(val, pin)")
+        save = self.app.index("saved = await engine.saveApiKeyWithPin(val, pin)")
         self.assertLess(unlock, empty)
         self.assertLess(empty, save)
 
