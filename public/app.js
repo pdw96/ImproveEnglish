@@ -126,6 +126,12 @@
   let currentInputMode = "text";
   let recognition = null;
   let isRecording = false;
+  // 사용자가 [말하기 종료]를 누르기 전까지 true — 브라우저가 스스로 끝내도 다시 켠다.
+  let keepListening = false;
+  // start() 를 불렀고 브라우저의 start 이벤트를 기다리는 중 — 이 사이에 누른 멈춤도 지킨다.
+  let isStarting = false;
+  let restartTimer = null;
+  let finishListeningUi = null;
   let lastRenderedRecord = null;
 
   let vocabItems = [];
@@ -351,7 +357,7 @@
     if (!canSpeak) return;
     // 듣는 중이면 말하기를 먼저 끝낸다 — 스피커 소리를 내 말로 알아듣고 입력창에 붙이지 않게.
     // stop() 은 그때까지 말한 글을 확정해 남긴다.
-    if (isRecording && recognition) recognition.stop();
+    if (keepListening || isRecording || isStarting) stopListening();
     stopSpeaking();
     const utterance = new window.SpeechSynthesisUtterance(text);
     utterance.lang = "en-US";
@@ -1249,6 +1255,18 @@
     return piece.length === text.length;
   }
 
+  // 듣기를 끝낸다. 다시 켜기를 기다리는 중이면 기다림을 거두고 화면을 되돌린다.
+  // stop() 은 그때까지 말한 글을 확정해 남긴다(abort() 는 버린다).
+  function stopListening() {
+    keepListening = false;
+    if (restartTimer) {
+      clearTimeout(restartTimer);
+      restartTimer = null;
+      if (finishListeningUi) finishListeningUi();
+    }
+    if (recognition && (isRecording || isStarting)) recognition.stop();
+  }
+
   function setupSpeechRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -1267,54 +1285,173 @@
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
-    // 이번 듣기에서 이미 붙인 확정 결과의 번호. 같은 결과를 두 번 붙이지 않는다.
-    let appendedResults = new Set();
-    let addedThisSession = false;
-    // 끝날 때 보여 줄 안내가 이미 정해졌으면(오류 · 상한) 끝 안내로 덮지 않는다.
+    // 말소리 없이 브라우저가 연달아 이만큼 끝내면 다시 켜지 않고 멈춘다(폰의 시작음이 끝없이 나지 않게).
+    const VOICE_IDLE_RESTART_LIMIT = 3;
+    const VOICE_RESTART_DELAY_MS = 250;
+    // 다시 켜도 그만두는 오류 — 권한 · 마이크 · 네트워크 문제는 다시 켜도 같다.
+    const FATAL_ERRORS = new Set([
+      "not-allowed",
+      "service-not-allowed",
+      "audio-capture",
+      "network",
+      "language-not-supported",
+    ]);
+
+    // 한 번의 듣기(브라우저 세션) 안에서만 쓰는 값 — 다시 켤 때마다 비운다.
+    let committedByIndex = new Map(); // 결과 번호 → 그 번호로 이미 붙인 글(정규화)
+    let lastCommitted = ""; // 바로 앞에 붙인 문장 — 같은 문장이 두 번 오면 한 번만 붙인다
+    let pendingResults = []; // 아직 붙이지 않은 확정 전 결과 [{ i, transcript }] — 미리보기 줄의 글자
+    let committedThisSession = false;
+    // [마이크로 말하기] 한 번 동안 쓰는 값 — 다시 켜도 이어 간다.
+    let addedThisListen = false;
     let endNoticeShown = false;
+    let idleSessions = 0;
+
+    const normalizeVoice = (text) => text.trim().replace(/\s+/g, " ").toLowerCase();
+    // longer 가 shorter 와 같거나 shorter 로 시작하는 누적 글인가(낱말 단위)
+    const covers = (longer, shorter) => longer === shorter || longer.startsWith(`${shorter} `);
+    // 앞 낱말 count 개를 뺀 나머지
+    const dropWords = (text, count) => text.trim().split(/\s+/).slice(count).join(" ");
+
+    finishListeningUi = () => {
+      voiceBtn.textContent = "마이크로 말하기";
+      voiceBtn.classList.remove("recording");
+      hideVoiceInterim();
+      if (!endNoticeShown) {
+        if (addedThisListen) {
+          showStatus("음성이 글자로 입력되었습니다. 내용을 확인한 뒤 [문장 첨삭받기]를 눌러주세요.", "info");
+        } else {
+          hideStatus();
+        }
+      }
+    };
+
+    // 확정된 문장을 입력창에 붙인다. 1,000자에 닿으면 듣기를 끝내고 false 를 돌려준다.
+    // fullKey 는 transcript 가 늘어난 부분만일 때 그 결과의 전체 글 — 다음 누적 결과를 알아보는 기준으로 남긴다.
+    function commitVoice(transcript, fullKey) {
+      const key = normalizeVoice(transcript);
+      if (!key || (fullKey || key) === lastCommitted) return true;
+      let piece = transcript.trim();
+      // Android 는 앞 문장에 새 말을 이어 붙인 누적 문장을 보내기도 한다 — 앞에 붙인 부분은 빼고 새 말만 붙인다.
+      if (!fullKey && lastCommitted && key.startsWith(`${lastCommitted} `)) {
+        piece = dropWords(piece, lastCommitted.split(" ").length);
+      }
+      lastCommitted = fullKey || key;
+      const fitted = appendVoiceText(piece);
+      addedThisListen = true;
+      committedThisSession = true;
+      setInputMode("voice");
+      updateCounter();
+      if (!fitted || sentenceInput.value.length >= VOICE_MAX_CHARS) {
+        endNoticeShown = true;
+        showStatus("문장은 최대 1,000자까지 입력할 수 있어 듣기를 멈췄습니다.", "error");
+        pendingResults = [];
+        hideVoiceInterim();
+        stopListening();
+        return false;
+      }
+      return true;
+    }
+
+    // 한 결과 번호의 글을 붙인다. 그 번호로 앞서 붙인 글이 있으면 늘어난 부분만 붙이고, 같거나 고쳐 쓴 글은 다시 붙이지 않는다.
+    function commitIndex(i, transcript) {
+      const key = normalizeVoice(transcript);
+      const prev = committedByIndex.get(i);
+      if (prev !== undefined) {
+        if (key === prev || !covers(key, prev)) return true;
+        committedByIndex.set(i, key);
+        // 늘어난 부분만 붙이되, 다음 누적 결과의 기준은 전체 글로 남긴다.
+        return commitVoice(dropWords(transcript, prev.split(" ").length), key);
+      }
+      committedByIndex.set(i, key);
+      return commitVoice(transcript);
+    }
+
+    // 남은 확정 전 결과를 차례로 붙인다. covering(바로 뒤 확정 결과)이 앞부분째 덮는 결과는 그 확정 결과가 대신한다.
+    function flushPending(covering) {
+      const list = pendingResults;
+      pendingResults = [];
+      for (const p of list) {
+        if (covering && covers(covering, normalizeVoice(p.transcript))) {
+          // 덮인 결과는 그 확정 결과로 붙은 셈이다 — 다음 이벤트에 다시 와도 붙지 않게 기록한다.
+          committedByIndex.set(p.i, covering);
+          continue;
+        }
+        if (!commitIndex(p.i, p.transcript)) return false;
+      }
+      return true;
+    }
+
+    // 미리보기 글자 — 누적 · 반복 결과는 하나로 합치고, 이미 붙인 앞부분은 뺀다.
+    function previewText(list) {
+      const parts = [];
+      for (const p of list) {
+        const key = normalizeVoice(p.transcript);
+        const last = parts[parts.length - 1];
+        if (last && covers(key, last.key)) parts[parts.length - 1] = { key, text: p.transcript };
+        else if (last && covers(last.key, key)) continue;
+        else parts.push({ key, text: p.transcript });
+      }
+      let text = parts.map((x) => x.text).join(" ");
+      const key = normalizeVoice(text);
+      if (lastCommitted && covers(key, lastCommitted)) text = dropWords(text, lastCommitted.split(" ").length);
+      return text;
+    }
 
     recognition.addEventListener("start", () => {
+      isStarting = false;
       isRecording = true;
+      // start 를 기다리는 사이에 멈춤을 눌렀으면 켜지 않고 바로 끝낸다.
+      if (!keepListening) {
+        recognition.stop();
+        return;
+      }
+      committedByIndex = new Map();
+      lastCommitted = "";
+      pendingResults = [];
+      committedThisSession = false;
       voiceBtn.textContent = "말하기 종료";
       voiceBtn.classList.add("recording");
-      showStatus(
-        "영어로 말씀해 주세요. 쉬었다 이어 말해도 됩니다. 다 말했으면 [말하기 종료]를 눌러 주세요.",
-        "info"
-      );
+      if (!endNoticeShown) {
+        showStatus(
+          "영어로 말씀해 주세요. 쉬었다 이어 말해도 됩니다. 다 말했으면 [말하기 종료]를 눌러 주세요.",
+          "info"
+        );
+      }
     });
 
     recognition.addEventListener("result", (event) => {
       // 미리보기는 매번 남은 확정 전 결과 전부로 다시 만든다 — 바뀐 결과(resultIndex)부터만 보면 앞의 확정 전
       // 글자가 빠진다. 확정 결과는 번호로 한 번만 붙이므로 처음부터 다시 훑어도 겹치지 않는다.
-      let interim = "";
+      pendingResults = [];
       for (let i = 0; i < event.results.length; i += 1) {
         const result = event.results[i];
-        const transcript = (result[0] && result[0].transcript ? result[0].transcript : "").trim();
+        const alt = result[0];
+        const transcript = (alt && alt.transcript ? alt.transcript : "").trim();
         if (!transcript) continue;
-        if (result.isFinal) {
-          if (appendedResults.has(i)) continue;
-          appendedResults.add(i);
-          const fitted = appendVoiceText(transcript);
-          addedThisSession = true;
-          setInputMode("voice");
-          updateCounter();
-          if (!fitted || sentenceInput.value.length >= VOICE_MAX_CHARS) {
-            endNoticeShown = true;
-            showStatus("문장은 최대 1,000자까지 입력할 수 있어 듣기를 멈췄습니다.", "error");
-            hideVoiceInterim();
-            recognition.stop();
-            return;
-          }
+        const key = normalizeVoice(transcript);
+        // 이 번호로 이미 붙인 글을 덮는(같거나 짧은) 결과는 다시 보지 않는다.
+        const prev = committedByIndex.get(i);
+        if (prev !== undefined && covers(prev, key)) continue;
+        // Android Chrome 은 확정 전 글자도 isFinal 로 보내고 confidence 를 0 으로 둔다 — 그런 결과는 확정 전으로 본다.
+        const isFinal = result.isFinal && !(alt && alt.confidence === 0);
+        if (isFinal) {
+          // 이 확정 결과 앞에 남은 확정 전 결과(Android)는 순서대로 먼저 붙인다 — 이 결과가 앞부분째 덮는 것은 뺀다.
+          if (!flushPending(key)) return;
+          if (!commitIndex(i, transcript)) return;
         } else {
-          interim = interim ? `${interim} ${transcript}` : transcript;
+          pendingResults.push({ i, transcript });
         }
       }
-      showVoiceInterim(interim);
+      showVoiceInterim(previewText(pendingResults));
     });
 
     recognition.addEventListener("error", (event) => {
-      endNoticeShown = true;
       const code = event && event.error;
+      // 말이 없어서(no-speech) · 끊어서(aborted) 끝난 것은 오류로 알리지 않는다 — 끝나면 다시 켠다.
+      if (!FATAL_ERRORS.has(code)) return;
+      keepListening = false;
+      endNoticeShown = true;
       if (code === "not-allowed" || code === "service-not-allowed") {
         showStatus("마이크 권한을 허용해 주세요. 브라우저 주소창의 마이크 설정에서 허용할 수 있습니다.", "error");
       } else {
@@ -1324,36 +1461,59 @@
 
     recognition.addEventListener("end", () => {
       isRecording = false;
-      voiceBtn.textContent = "마이크로 말하기";
-      voiceBtn.classList.remove("recording");
+      isStarting = false;
+      // 확정이 오지 않은 채 끝났으면 남은 확정 전 글자를 붙여 잃지 않는다(Android 에서 confidence 0 만 오는 경우).
+      if (pendingResults.length) flushPending("");
+      pendingResults = [];
       hideVoiceInterim();
-      if (!endNoticeShown) {
-        if (addedThisSession) {
-          showStatus("음성이 글자로 입력되었습니다. 내용을 확인한 뒤 [문장 첨삭받기]를 눌러주세요.", "info");
-        } else {
-          hideStatus();
+      idleSessions = committedThisSession ? 0 : idleSessions + 1;
+      if (keepListening && idleSessions >= VOICE_IDLE_RESTART_LIMIT) {
+        keepListening = false;
+        if (!endNoticeShown && !addedThisListen) {
+          endNoticeShown = true;
+          showStatus("말소리가 들리지 않아 듣기를 멈췄습니다. 다시 말하려면 [마이크로 말하기]를 눌러 주세요.", "info");
         }
       }
+      if (keepListening) {
+        // 브라우저가 스스로 끝냈다 — [말하기 종료]를 누르기 전이므로 다시 켠다.
+        restartTimer = setTimeout(() => {
+          restartTimer = null;
+          if (!keepListening) return;
+          try {
+            isStarting = true;
+            recognition.start();
+          } catch (_) {
+            isStarting = false;
+            keepListening = false;
+            finishListeningUi();
+          }
+        }, VOICE_RESTART_DELAY_MS);
+        return;
+      }
+      finishListeningUi();
     });
 
     voiceBtn.addEventListener("click", () => {
-      if (isRecording) {
-        recognition.stop();
+      if (keepListening || isRecording || isStarting) {
+        stopListening();
         return;
       }
       if (sentenceInput.value.length >= VOICE_MAX_CHARS) {
         showStatus("문장은 최대 1,000자까지 입력할 수 있습니다.", "error");
         return;
       }
-      appendedResults = new Set();
-      addedThisSession = false;
+      addedThisListen = false;
       endNoticeShown = false;
+      idleSessions = 0;
+      keepListening = true;
       // 앱이 읽는 소리를 내 말로 알아듣지 않게 읽기를 먼저 멈춘다.
       stopSpeaking();
       try {
+        isStarting = true;
         recognition.start();
       } catch (_) {
         // 이미 듣는 중이면 브라우저가 거절한다 — 그대로 둔다.
+        isStarting = false;
       }
     });
   }
