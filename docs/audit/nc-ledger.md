@@ -88,7 +88,6 @@
 
 | NC | 무엇 | 낸 회차 | 담당 | 심각도 | 상태 | 판정과 근거 |
 |---|---|---|---|---|---|---|
-| 8 | 「다시 켜기」 중에 브라우저가 시작을 거절하면 「마이크를 켜지 못했습니다」 안내가 나오지 않는다 — 버튼 누름만 안내하고 P8 다시 켜기 타이머는 `isStarting` · `keepListening` 만 되돌린다(`public/app.js` 다시 켜기 타이머) | 회차 16 | `audit-internal` | 낮음 | **고침** | 저자 판정 고침(2026-10-29) — 조각 speaking-practice 안. 두 길이 같은 `failStart()` 를 쓰게 했다(PR 6, 설계 끝 「감사 회차 16 뒤 덧붙임」). 시험 P8 · 화면 확인 S2. 담당 `audit-internal` 재감사가 닫는다 |
 
 ## 확인불가
 
@@ -97,5 +96,5 @@
 | 1 | 배포 출처(`pdw96.github.io`)를 다른 GitHub Pages 사이트와 나누면, 그 사이트가 이 앱의 기기 저장소(평문 키 · 금고 값 · 해제 키)를 읽을 수 있다 — 설계 ② 의 XSS 문장이 덮지 못하는 길 | 회차 12 | `audit-secrets` | 맞춤 도메인 여부와 같은 `pdw96.github.io` 아래 다른 Pages 사이트가 있는지 | 저자 | 0 | 닫힘 — 저자 답(2026-10-29): 같은 주소 아래 다른 Pages 사이트가 없고 열 계획도 없다. 부적합 아님. 「다른 Pages 사이트를 열면 노출된다」를 설계 ② 한계로 덧붙였다(설계 끝 2026-10-29 항목) |
 | 2 | 설계 V3 「창을 닫으면 사라진다」가 실제 폰 브라우저에서 맞는가 — 닫은 탭 복원 · 브라우저 재시작 · 탭 복제 때 해제 상태(`sessionStorage`)가 되살아나면 V3 는 과장이고 ② 두 번째 한계도 모자라다 | 회차 12 | `audit-secrets` | 저자가 실제로 쓰는 폰 브라우저(또는 설치한 앱)에서 해제한 뒤 ① 최근 앱 목록에서 밀어 닫기 ② 브라우저를 껐다 켜기 · 닫은 탭 다시 열기 ③ 탭 복제를 해 보고, 각각 설정 탭 배지가 「금고 잠김」인지 본 결과 | 저자 | 0 | 닫힘 — 저자 기기 확인(2026-10-29, Android 폰): 해제 직후 「연결됨」, 앱 목록에서 밀어 닫기 · 탭 복제 뒤 「금고 잠김」(캡처), 브라우저 껐다 켜기 · 닫은 탭 다시 열기 뒤 잠김(저자 진술). 부적합 아님. 결과는 설계 끝 2026-10-29 항목 |
 | 3 | 앵커볼트(첨삭 요청 · 응답 구조, 프롬프트 규약)와 `src/` · `public/standalone-engine.js` 가 조각 7 에서 바뀌지 않았는가 | 회차 15 | `audit-internal` | 조각 7 구현 직전 main 부터 지금까지의 diff | 호출자 | 0 | 닫힘 — 회차 16(`audit-internal`, 담당) 판정 적합: `git diff ce2845b 9c921e8` 에서 `src/` · `public/standalone-engine.js` · `public/sw.js` 변경 없음. 부적합 아님 |
-| 4 | 조각 7 구현에 설계 ⑥(PR 1~5) 밖의 기능이 실렸는가 — 특히 `renderHistoryList` 의 첫 로드 자동 그리기 | 회차 15 | `audit-internal` | U-3 과 같은 diff | 호출자 | 1 | 열림 — 회차 16 유지(diff 가 `--stat` 뿐). 본문 diff `ce2845b..9c921e8 -- public/app.js public/index.html public/styles.css` 를 회차 17 에 넘김 |
-| 5 | 회차 15 고침 커밋(`9c921e8..abebd8d`)이 `src/` 나 그 밖의 걸러 낸 파일을 건드렸는가 | 회차 16 | `audit-internal` | 거르지 않은 `git diff --stat 9c921e8 abebd8d` | 호출자 | 0 | 열림 — 근거를 회차 17 에 넘김: 거르지 않은 목록은 감사 기록 · 대장 둘 · 조각 7 설계 · `public/app.js` · `tests/test_speaking.py` 여섯이고 `src/` 는 없다 |
+| 4 | 조각 7 구현에 설계 ⑥(PR 1~5) 밖의 기능이 실렸는가 — 특히 `renderHistoryList` 의 첫 로드 자동 그리기 | 회차 15 | `audit-internal` | U-3 과 같은 diff | 호출자 | 1 | 닫힘 — 회차 17(`audit-internal`, 담당) 판정 적합: `ce2845b..9c921e8` 본문이 설계 ⑥ PR 1~5 와 덧붙임에만 대응하고, `renderHistoryList` 첫 로드 자동 그리기는 조각 7 전부터 있던 코드다. 부적합 아님 |
+| 5 | 회차 15 고침 커밋(`9c921e8..abebd8d`)이 `src/` 나 그 밖의 걸러 낸 파일을 건드렸는가 | 회차 16 | `audit-internal` | 거르지 않은 `git diff --stat 9c921e8 abebd8d` | 호출자 | 0 | 닫힘 — 회차 17(`audit-internal`, 담당) 판정 적합: 거르지 않은 `--stat 9c921e8 abebd8d` 에 `src/` · `standalone-engine.js` · `sw.js` 가 없다(`abebd8d..d2942c6` 도 같다). 부적합 아님 |

@@ -181,7 +181,7 @@ class TestSlice7SpeakingPracticePR3(unittest.TestCase):
         self.block = speech_block()
 
     def test_p8_restarts_until_user_stops(self) -> None:
-        """[P8] [말하기 종료]를 누르기 전에 브라우저가 끝내면 다시 켠다. 종료 · 치명 오류 · 상한 · 말 없음 3번이면 그만둔다."""
+        """[P8] [말하기 종료]를 누르기 전에 브라우저가 끝내면 다시 켠다. 종료 · [듣기](P6) · no-speech · aborted 밖의 오류 · 1,000자 · 말 없음 3번 · 다시 켜다 시작을 거절당함이면 그만둔다."""
         end = handler(self.block, "end")
         self.assertRegex(end, r"if \(keepListening\) \{[\s\S]*setTimeout\([\s\S]*recognition\.start\(\)[\s\S]*return;")
         self.assertRegex(end, r"if \(!keepListening\) return;")
