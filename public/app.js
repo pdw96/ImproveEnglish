@@ -31,6 +31,7 @@
   const charCounter = document.getElementById("char-counter");
   const modeBadge = document.getElementById("input-mode-badge");
   const voiceBtn = document.getElementById("voice-btn");
+  const voiceInterim = document.getElementById("voice-interim");
   const submitBtn = document.getElementById("submit-btn");
   const statusMsg = document.getElementById("status-msg");
 
@@ -1168,6 +1169,31 @@
     }
   }
 
+  const VOICE_MAX_CHARS = 1000;
+
+  function hideVoiceInterim() {
+    if (!voiceInterim) return;
+    voiceInterim.textContent = "";
+    voiceInterim.hidden = true;
+  }
+
+  function showVoiceInterim(text) {
+    if (!voiceInterim) return;
+    voiceInterim.textContent = text;
+    voiceInterim.hidden = !text;
+  }
+
+  // 확정된 문장을 입력창 끝에 붙인다. 1,000자를 넘는 부분은 붙이지 않고 false 를 돌려준다.
+  function appendVoiceText(text) {
+    const current = sentenceInput.value;
+    const sep = current && !/\s$/.test(current) ? " " : "";
+    const room = VOICE_MAX_CHARS - current.length - sep.length;
+    if (room <= 0) return false;
+    const piece = text.length > room ? text.slice(0, room) : text;
+    sentenceInput.value = `${current}${sep}${piece}`;
+    return piece.length === text.length;
+  }
+
   function setupSpeechRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -1182,41 +1208,95 @@
 
     recognition = new SpeechRecognition();
     recognition.lang = "en-US";
-    recognition.interimResults = false;
+    recognition.continuous = true;
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
+
+    // 이번 듣기에서 이미 붙인 확정 결과의 번호. 같은 결과를 두 번 붙이지 않는다.
+    let appendedResults = new Set();
+    let addedThisSession = false;
+    // 끝날 때 보여 줄 안내가 이미 정해졌으면(오류 · 상한) 끝 안내로 덮지 않는다.
+    let endNoticeShown = false;
 
     recognition.addEventListener("start", () => {
       isRecording = true;
       voiceBtn.textContent = "말하기 종료";
       voiceBtn.classList.add("recording");
-      showStatus("영어로 말씀해 주세요. 말씀을 마치면 자동으로 입력창에 들어갑니다...", "info");
+      showStatus(
+        "영어로 말씀해 주세요. 쉬었다 이어 말해도 됩니다. 다 말했으면 [말하기 종료]를 눌러 주세요.",
+        "info"
+      );
     });
 
     recognition.addEventListener("result", (event) => {
-      const transcript = event.results[0][0].transcript;
-      sentenceInput.value = sentenceInput.value
-        ? `${sentenceInput.value.trim()} ${transcript}`
-        : transcript;
-      setInputMode("voice");
-      updateCounter();
-      showStatus("음성이 글자로 입력되었습니다. 내용을 확인한 뒤 [문장 첨삭받기]를 눌러주세요.", "info");
+      // 미리보기는 매번 남은 확정 전 결과 전부로 다시 만든다 — 바뀐 결과(resultIndex)부터만 보면 앞의 확정 전
+      // 글자가 빠진다. 확정 결과는 번호로 한 번만 붙이므로 처음부터 다시 훑어도 겹치지 않는다.
+      let interim = "";
+      for (let i = 0; i < event.results.length; i += 1) {
+        const result = event.results[i];
+        const transcript = (result[0] && result[0].transcript ? result[0].transcript : "").trim();
+        if (!transcript) continue;
+        if (result.isFinal) {
+          if (appendedResults.has(i)) continue;
+          appendedResults.add(i);
+          const fitted = appendVoiceText(transcript);
+          addedThisSession = true;
+          setInputMode("voice");
+          updateCounter();
+          if (!fitted || sentenceInput.value.length >= VOICE_MAX_CHARS) {
+            endNoticeShown = true;
+            showStatus("문장은 최대 1,000자까지 입력할 수 있어 듣기를 멈췄습니다.", "error");
+            hideVoiceInterim();
+            recognition.stop();
+            return;
+          }
+        } else {
+          interim = interim ? `${interim} ${transcript}` : transcript;
+        }
+      }
+      showVoiceInterim(interim);
     });
 
-    recognition.addEventListener("error", () => {
-      showStatus("음성을 인식하지 못했습니다. 마이크 권한을 확인하거나 다시 시도해 주세요.", "error");
+    recognition.addEventListener("error", (event) => {
+      endNoticeShown = true;
+      const code = event && event.error;
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        showStatus("마이크 권한을 허용해 주세요. 브라우저 주소창의 마이크 설정에서 허용할 수 있습니다.", "error");
+      } else {
+        showStatus("음성을 인식하지 못했습니다. 마이크 권한을 확인하거나 다시 시도해 주세요.", "error");
+      }
     });
 
     recognition.addEventListener("end", () => {
       isRecording = false;
       voiceBtn.textContent = "마이크로 말하기";
       voiceBtn.classList.remove("recording");
+      hideVoiceInterim();
+      if (!endNoticeShown) {
+        if (addedThisSession) {
+          showStatus("음성이 글자로 입력되었습니다. 내용을 확인한 뒤 [문장 첨삭받기]를 눌러주세요.", "info");
+        } else {
+          hideStatus();
+        }
+      }
     });
 
     voiceBtn.addEventListener("click", () => {
       if (isRecording) {
         recognition.stop();
-      } else {
+        return;
+      }
+      if (sentenceInput.value.length >= VOICE_MAX_CHARS) {
+        showStatus("문장은 최대 1,000자까지 입력할 수 있습니다.", "error");
+        return;
+      }
+      appendedResults = new Set();
+      addedThisSession = false;
+      endNoticeShown = false;
+      try {
         recognition.start();
+      } catch (_) {
+        // 이미 듣는 중이면 브라우저가 거절한다 — 그대로 둔다.
       }
     });
   }
