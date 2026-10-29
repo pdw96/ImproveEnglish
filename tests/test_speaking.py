@@ -48,14 +48,17 @@ class TestSlice7SpeakingPracticePR1(unittest.TestCase):
         self.assertNotRegex(self.block, r"recognition\.continuous\s*=\s*false")
         result = handler(self.block, "result")
         self.assertIn("isFinal", result)
-        self.assertRegex(result, r"appendedResults\.has\(i\)")
-        self.assertRegex(result, r"appendedResults\.add\(i\)")
-        self.assertIn("commitVoice(transcript)", result)
+        # 결과 번호마다 붙인 글을 기억해, 같은 결과는 다시 붙이지 않는다
+        self.assertRegex(result, r"const prev = committedByIndex\.get\(i\);\s*if \(prev !== undefined && covers\(prev, key\)\) continue;")
+        self.assertIn("commitIndex(i, transcript)", result)
+        commit_index = function_body_in(self.block, "commitIndex")
+        self.assertRegex(commit_index, r"if \(key === prev \|\| !covers\(key, prev\)\) return true;")
+        self.assertIn("committedByIndex.set(i, key);", commit_index)
         self.assertIn("appendVoiceText(", function_body_in(self.block, "commitVoice"))
         # 옛 꼴 — 매번 첫 결과만 읽던 줄
         self.assertNotIn("event.results[0][0]", result)
         # 듣기가 (다시) 시작될 때마다 번호 기억을 비운다(새 듣기는 번호가 0 부터다)
-        self.assertRegex(handler(self.block, "start"), r"appendedResults\s*=\s*new Set\(\)")
+        self.assertRegex(handler(self.block, "start"), r"committedByIndex\s*=\s*new Map\(\)")
 
     def test_p2_interim_goes_to_preview_line_only(self) -> None:
         """[P2] 확정 전 글자는 미리보기 줄(#voice-interim)에만 쓰고, 듣기가 끝나면 비우고 숨긴다."""
@@ -66,7 +69,7 @@ class TestSlice7SpeakingPracticePR1(unittest.TestCase):
             r'<textarea[^>]*id="sentence-input"[\s\S]*?</textarea>\s*<p id="voice-interim"[^>]*hidden',
         )
         result = handler(self.block, "result")
-        self.assertIn("showVoiceInterim(interim)", result)
+        self.assertIn("showVoiceInterim(previewText(pendingResults))", result)
         # 미리보기는 모든 결과에서 다시 만든다 — 바뀐 결과(resultIndex)부터만 훑으면 앞의 확정 전 글자가 빠진다
         self.assertRegex(result, r"for \(let i = 0; i < event\.results\.length")
         self.assertNotRegex(result, r"let i = event\.resultIndex")
@@ -103,7 +106,7 @@ class TestSlice7SpeakingPracticePR1(unittest.TestCase):
         commit = function_body_in(self.block, "commitVoice")
         self.assertRegex(commit, r"VOICE_MAX_CHARS[\s\S]*stopListening\(\)")
         self.assertIn("최대 1,000자", commit)
-        self.assertRegex(handler(self.block, "result"), r"if \(!commitVoice\(transcript\)\) return;")
+        self.assertRegex(handler(self.block, "result"), r"if \(!commitIndex\(i, transcript\)\) return;")
         # 옛 꼴 — 길이를 보지 않고 그대로 이어 붙이던 줄
         self.assertNotRegex(APP_JS, r"sentenceInput\.value\.trim\(\)\} \$\{transcript\}")
         # 이미 1,000자면 듣기를 시작하지 않는다
@@ -143,11 +146,11 @@ class TestSlice7SpeakingPracticePR2(unittest.TestCase):
     def test_p6_mic_start_stops_speaking_first(self) -> None:
         """[P6] 마이크를 켜면 읽던 소리를 먼저 멈추고, 듣는 중에 [듣기]를 누르면 말하기를 먼저 끝낸다(설계 끝 덧붙임)."""
         block = speech_block()
-        self.assertRegex(block, r"stopSpeaking\(\);\s*try \{\s*recognition\.start\(\)")
+        self.assertRegex(block, r"stopSpeaking\(\);\s*try \{\s*isStarting = true;\s*recognition\.start\(\)")
         self.assertNotRegex(block, r"recognition\.start\(\);[\s\S]{0,40}stopSpeaking\(\)")
         speak = function_body("speakEnglish")
         # 읽기 전에 듣기를 끝낸다 — 다시 켜기를 기다리는 중이어도 끝낸다
-        self.assertRegex(speak, r"if \(keepListening \|\| isRecording\) stopListening\(\);[\s\S]*speechSynthesis\.speak\(")
+        self.assertRegex(speak, r"if \(keepListening \|\| isRecording \|\| isStarting\) stopListening\(\);[\s\S]*speechSynthesis\.speak\(")
         stop = function_body("stopListening")
         # abort() 는 말한 글을 버리므로 쓰지 않는다
         self.assertRegex(stop, r"keepListening = false;[\s\S]*recognition\.stop\(\)")
@@ -185,10 +188,14 @@ class TestSlice7SpeakingPracticePR3(unittest.TestCase):
         self.assertRegex(end, r"idleSessions >= VOICE_IDLE_RESTART_LIMIT\) \{\s*keepListening = false;")
         # 누르면 켜 두기, 다시 누르면 그만두기
         click = self.block[self.block.index('voiceBtn.addEventListener("click"'):]
-        self.assertRegex(click, r"if \(keepListening \|\| isRecording\) \{\s*stopListening\(\);\s*return;")
+        self.assertRegex(click, r"if \(keepListening \|\| isRecording \|\| isStarting\) \{\s*stopListening\(\);\s*return;")
         self.assertRegex(click, r"keepListening = true;[\s\S]*recognition\.start\(\)")
         stop = function_body("stopListening")
         self.assertIn("clearTimeout(restartTimer)", stop)
+        # 켜는 중(start 이벤트 전)에 누른 멈춤도 지킨다(리뷰 1회차)
+        self.assertIn("recognition && (isRecording || isStarting)) recognition.stop()", stop)
+        self.assertRegex(handler(self.block, "start"), r"if \(!keepListening\) \{\s*recognition\.stop\(\);\s*return;")
+        self.assertEqual(len(re.findall(r"isStarting = true;\s*recognition\.start\(\)", self.block)), 2)
         # 권한 · 마이크 · 네트워크 오류는 다시 켜지 않는다. 말 없음(no-speech)은 다시 켠다
         error = handler(self.block, "error")
         self.assertRegex(error, r"if \(!FATAL_ERRORS\.has\(code\)\) return;\s*keepListening = false;")
@@ -203,11 +210,20 @@ class TestSlice7SpeakingPracticePR3(unittest.TestCase):
         self.assertRegex(result, r"if \(isFinal\) \{")
         self.assertNotRegex(result, r"if \(result\.isFinal\) \{")
         end = handler(self.block, "end")
-        self.assertRegex(end, r"if \(pendingInterim && !lastEventCommitted\) commitVoice\(pendingInterim\);")
+        self.assertRegex(end, r"if \(pendingResults\.length\) flushPending\(\"\"\);")
+        # 확정 결과 앞에 남은 확정 전 결과는 순서대로 먼저 붙인다(리뷰 1회차)
+        self.assertRegex(result, r"if \(!flushPending\(key\)\) return;\s*if \(!commitIndex\(i, transcript\)\) return;")
+        flush = function_body_in(self.block, "flushPending")
+        self.assertRegex(flush, r"if \(covering && covers\(covering, normalizeVoice\(p\.transcript\)\)\) continue;")
+        self.assertIn("commitIndex(p.i, p.transcript)", flush)
+        # 미리보기는 누적 · 반복 결과를 하나로 합친다(리뷰 1회차)
+        preview = function_body_in(self.block, "previewText")
+        self.assertRegex(preview, r"if \(last && covers\(key, last\.key\)\) parts\[parts\.length - 1\]")
+        self.assertRegex(preview, r"else if \(last && covers\(last\.key, key\)\) continue;")
         commit = function_body_in(self.block, "commitVoice")
         self.assertRegex(commit, r"if \(!key \|\| key === lastCommitted\) return true;")
         # 누적 문장(앞 문장 + 새 말)은 새 말만 붙인다
-        self.assertRegex(commit, r"key\.startsWith\(`\$\{lastCommitted\} `\)[\s\S]*\.slice\(lastCommitted\.split\(\" \"\)\.length\)")
+        self.assertRegex(commit, r"key\.startsWith\(`\$\{lastCommitted\} `\)\) \{\s*piece = dropWords\(piece, lastCommitted\.split\(\" \"\)\.length\)")
         self.assertIn("appendVoiceText(piece)", commit)
         self.assertNotIn("appendVoiceText(transcript)", commit)
 
