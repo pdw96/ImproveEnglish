@@ -1,9 +1,13 @@
 /**
- * ImproveEnglish 조각 1(ai-feedback) · 조각 2(vocab-review) · 조각 3(study-routine) 브라우저 화면 제어 스크립트.
- * - 상단 연속 학습 루틴 배너 및 3단 탭 전환 (첨삭 / 단어장·복습 / 학습 루틴·기록)
+ * ImproveEnglish 브라우저 화면 제어 스크립트 — 조각 ai-feedback · vocab-review · study-routine · daily-mission ·
+ * standalone-mobile-app · api-key-vault · speaking-practice 의 화면을 맡는다.
+ * - 상단 연속 학습 루틴 배너 및 탭 전환 (첨삭 / 단어장·복습 / 학습 루틴·기록 / 설정)
  * - POST /api/feedback, GET /api/history 연동
  * - GET/POST /api/vocab, POST /api/vocab/review, DELETE /api/vocab/<id> 연동
  * - GET /api/routine, POST /api/routine/goal 연동 및 최근 14일 달력·날짜별 내역 표시
+ * - GET /api/mission/today 오늘의 미션
+ * - 설정 탭: 단독 앱 모드 · API 키 보관과 금고 · 백업/복원
+ * - 말하기: 음성 인식으로 이어 말하기(쉬면 다시 켜기) · 첨삭 노트 [듣기](음성 합성)
  */
 
 (function () {
@@ -1294,14 +1298,9 @@
     // 말소리 없이 브라우저가 연달아 이만큼 끝내면 다시 켜지 않고 멈춘다(폰의 시작음이 끝없이 나지 않게).
     const VOICE_IDLE_RESTART_LIMIT = 3;
     const VOICE_RESTART_DELAY_MS = 250;
-    // 다시 켜도 그만두는 오류 — 권한 · 마이크 · 네트워크 문제는 다시 켜도 같다.
-    const FATAL_ERRORS = new Set([
-      "not-allowed",
-      "service-not-allowed",
-      "audio-capture",
-      "network",
-      "language-not-supported",
-    ]);
+    // 알리지 않고 다시 켜는 오류 — 말이 없어서(no-speech) · 끊겨서(aborted) 끝난 것뿐이다(설계 P8).
+    // 그 밖의 오류(권한 · 마이크 · 네트워크 · 그 밖)는 다시 켜도 같으므로 안내하고 그만둔다(설계 ③).
+    const RESTARTABLE_ERRORS = new Set(["no-speech", "aborted"]);
 
     // 한 번의 듣기(브라우저 세션) 안에서만 쓰는 값 — 다시 켤 때마다 비운다.
     let committedByIndex = new Map(); // 결과 번호 → 그 번호로 이미 붙인 글(정규화)
@@ -1331,6 +1330,16 @@
         }
       }
     };
+
+    // 브라우저가 듣기 시작을 거절했다 — 버튼으로 켤 때든 쉬는 동안 다시 켤 때든 듣지 않은 상태로 되돌리고
+    // 안내한다. 다음 누름은 다시 「시작」이다(설계 끝 「감사 회차 15 뒤 덧붙임」 · 「감사 회차 16 뒤 덧붙임」).
+    function failStart() {
+      isStarting = false;
+      keepListening = false;
+      endNoticeShown = true;
+      showStatus("마이크를 켜지 못했습니다. 잠시 뒤 [마이크로 말하기]를 다시 눌러 주세요.", "error");
+      finishListeningUi();
+    }
 
     // 확정된 문장을 입력창에 붙인다. 1,000자에 닿으면 듣기를 끝내고 false 를 돌려준다.
     // fullKey 는 transcript 가 늘어난 부분만일 때 그 결과의 전체 글 — 다음 누적 결과를 알아보는 기준으로 남긴다.
@@ -1455,8 +1464,7 @@
 
     recognition.addEventListener("error", (event) => {
       const code = event && event.error;
-      // 말이 없어서(no-speech) · 끊어서(aborted) 끝난 것은 오류로 알리지 않는다 — 끝나면 다시 켠다.
-      if (!FATAL_ERRORS.has(code)) return;
+      if (RESTARTABLE_ERRORS.has(code)) return;
       keepListening = false;
       endNoticeShown = true;
       if (code === "not-allowed" || code === "service-not-allowed") {
@@ -1477,7 +1485,8 @@
       idleSessions = committedThisSession ? 0 : idleSessions + 1;
       if (keepListening && idleSessions >= VOICE_IDLE_RESTART_LIMIT) {
         keepListening = false;
-        if (!endNoticeShown && !addedThisListen) {
+        // 앞서 글을 붙였어도 왜 꺼졌는지 알린다(설계 P8).
+        if (!endNoticeShown) {
           endNoticeShown = true;
           showStatus("말소리가 들리지 않아 듣기를 멈췄습니다. 다시 말하려면 [마이크로 말하기]를 눌러 주세요.", "info");
         }
@@ -1491,9 +1500,7 @@
             isStarting = true;
             recognition.start();
           } catch (_) {
-            isStarting = false;
-            keepListening = false;
-            finishListeningUi();
+            failStart();
           }
         }, VOICE_RESTART_DELAY_MS);
         return;
@@ -1520,8 +1527,7 @@
         isStarting = true;
         recognition.start();
       } catch (_) {
-        // 이미 듣는 중이면 브라우저가 거절한다 — 그대로 둔다.
-        isStarting = false;
+        failStart();
       }
     });
   }

@@ -1,4 +1,4 @@
-"""조각 7(speaking-practice) 정적 시험 — 설계 ② 보장 [P1] ~ [P4](PR 1) · [P5] ~ [P7](PR 2) · 설계 끝 덧붙임 [P8] · [P9](PR 3).
+"""조각 7(speaking-practice) 정적 시험 — 설계 ② 보장 [P1] ~ [P4](PR 1) · [P5] ~ [P7](PR 2) · 설계 끝 덧붙임 [P8] · [P9](PR 3) · [P10] · 임시 진단 빼기(PR 5) · 감사 회차 15 · 16 고침(PR 6).
 
 이 레포 시험은 Python 이라 브라우저 음성 기능을 돌리지 못한다. `public/app.js` · `public/index.html` 을 읽어
 보장마다 「있어야 할 장치」와 「없어야 할 옛 장치」를 함께 본다. 실제 동작은 PR 마다 Chromium 화면 확인으로 본다(설계 ⑤).
@@ -181,7 +181,7 @@ class TestSlice7SpeakingPracticePR3(unittest.TestCase):
         self.block = speech_block()
 
     def test_p8_restarts_until_user_stops(self) -> None:
-        """[P8] [말하기 종료]를 누르기 전에 브라우저가 끝내면 다시 켠다. 종료 · 치명 오류 · 상한 · 말 없음 3번이면 그만둔다."""
+        """[P8] [말하기 종료]를 누르기 전에 브라우저가 끝내면 다시 켠다. 종료 · [듣기](P6) · no-speech · aborted 밖의 오류 · 1,000자 · 말 없음 3번 · 다시 켜다 시작을 거절당함이면 그만둔다."""
         end = handler(self.block, "end")
         self.assertRegex(end, r"if \(keepListening\) \{[\s\S]*setTimeout\([\s\S]*recognition\.start\(\)[\s\S]*return;")
         self.assertRegex(end, r"if \(!keepListening\) return;")
@@ -189,7 +189,7 @@ class TestSlice7SpeakingPracticePR3(unittest.TestCase):
         self.assertRegex(self.block, r"const VOICE_IDLE_RESTART_LIMIT = 3;")
         self.assertRegex(end, r"idleSessions >= VOICE_IDLE_RESTART_LIMIT\) \{\s*keepListening = false;")
         # 누르면 켜 두기, 다시 누르면 그만두기
-        click = self.block[self.block.index('voiceBtn.addEventListener("click"'):]
+        click = self.block[self.block.rindex('voiceBtn.addEventListener("click"'):]
         self.assertRegex(click, r"if \(keepListening \|\| isRecording \|\| isStarting\) \{\s*stopListening\(\);\s*return;")
         self.assertRegex(click, r"keepListening = true;[\s\S]*recognition\.start\(\)")
         stop = function_body("stopListening")
@@ -200,10 +200,20 @@ class TestSlice7SpeakingPracticePR3(unittest.TestCase):
         self.assertEqual(len(re.findall(r"isStarting = true;\s*recognition\.start\(\)", self.block)), 2)
         # 권한 · 마이크 · 네트워크 오류는 다시 켜지 않는다. 말 없음(no-speech)은 다시 켠다
         error = handler(self.block, "error")
-        self.assertRegex(error, r"if \(!FATAL_ERRORS\.has\(code\)\) return;\s*keepListening = false;")
-        fatal = self.block[self.block.index("const FATAL_ERRORS"):self.block.index("]);", self.block.index("const FATAL_ERRORS"))]
-        self.assertIn('"not-allowed"', fatal)
-        self.assertNotIn('"no-speech"', fatal)
+        # 다시 켜는 오류는 no-speech · aborted 뿐이고, 그 밖은 안내하고 그만둔다(감사 회차 15 NC-3)
+        self.assertIn('const RESTARTABLE_ERRORS = new Set(["no-speech", "aborted"]);', self.block)
+        self.assertRegex(error, r"if \(RESTARTABLE_ERRORS\.has\(code\)\) return;\s*keepListening = false;\s*endNoticeShown = true;")
+        self.assertNotIn("FATAL_ERRORS", self.block)
+        # 말 없음으로 멈추면 앞서 글을 붙였어도 알린다(감사 회차 15 NC-4)
+        self.assertRegex(end, r"idleSessions >= VOICE_IDLE_RESTART_LIMIT\) \{\s*keepListening = false;[\s\S]*?if \(!endNoticeShown\) \{")
+        self.assertNotIn("!endNoticeShown && !addedThisListen", self.block)
+        # 시작을 거절당하면 듣지 않은 상태로 되돌린다(감사 회차 15 담당 없음)
+        fail = function_body_in(self.block, "failStart")
+        self.assertRegex(fail, r"isStarting = false;\s*keepListening = false;\s*endNoticeShown = true;\s*showStatus\(\"마이크를 켜지 못했습니다[\s\S]*?finishListeningUi\(\);")
+        # 버튼으로 켤 때도, 쉬는 동안 다시 켤 때도 같은 처리를 쓴다(감사 회차 16 NC-8)
+        self.assertRegex(click[click.index("} catch (_) {"):], r"^\} catch \(_\) \{\s*failStart\(\);")
+        self.assertRegex(end, r"recognition\.start\(\);\s*\} catch \(_\) \{\s*failStart\(\);")
+        self.assertEqual(self.block.count("failStart();"), 2)
 
     def test_p9_android_zero_confidence_is_interim_and_not_lost(self) -> None:
         """[P9] isFinal 이어도 confidence 가 0 이면 확정 전으로 미리보기에 두고, 확정 없이 끝나면 그 글을 붙인다. 같은 문장은 한 번만."""
