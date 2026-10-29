@@ -679,6 +679,41 @@ input[type="number"]:focus {
   color: #3d3a33;
 }
 
+/* 첨삭 노트 [듣기] 버튼 · 버튼 묶음 */
+.item-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.key-example-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.btn-listen {
+  flex-shrink: 0;
+  background: #ffffff;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 5px;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.btn-listen:hover {
+  background: var(--primary);
+  color: #ffffff;
+}
+
 /* [+ 단어장에 담기] 버튼 */
 .save-btn-group {
   display: inline-flex;

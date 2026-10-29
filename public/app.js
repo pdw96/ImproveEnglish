@@ -333,6 +333,47 @@
     return wrap;
   }
 
+  // 첨삭 노트 [듣기] — 브라우저 내장 음성 합성(speechSynthesis)으로 영어를 읽는다. 동시에 한 소리만 난다.
+  const canSpeak =
+    "speechSynthesis" in window && typeof window.SpeechSynthesisUtterance === "function";
+
+  function pickEnglishVoice() {
+    const voices = window.speechSynthesis.getVoices() || [];
+    return voices.find((v) => (v.lang || "").replace("_", "-") === "en-US") || null;
+  }
+
+  function stopSpeaking() {
+    if (!canSpeak) return;
+    window.speechSynthesis.cancel();
+  }
+
+  function speakEnglish(text) {
+    if (!canSpeak) return;
+    stopSpeaking();
+    const utterance = new window.SpeechSynthesisUtterance(text);
+    utterance.lang = "en-US";
+    const voice = pickEnglishVoice();
+    if (voice) utterance.voice = voice;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  // 읽을 글이 비었거나 음성 합성이 없으면 버튼을 만들지 않는다(null).
+  function createListenButton(text) {
+    const trimmed = (text || "").trim();
+    if (!canSpeak || !trimmed) return null;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn-listen";
+    btn.textContent = "듣기";
+    btn.setAttribute("aria-label", `원어민 발음으로 듣기: ${trimmed}`);
+    btn.addEventListener("click", () => speakEnglish(trimmed));
+    return btn;
+  }
+
+  function appendIfPresent(parent, child) {
+    if (child) parent.appendChild(child);
+  }
+
   function renderRecord(record) {
     if (!record || !record.feedback) return;
     lastRenderedRecord = record;
@@ -346,6 +387,8 @@
 
     if (resCorrectedSaveWrap) {
       resCorrectedSaveWrap.innerHTML = "";
+      resCorrectedSaveWrap.className = "item-actions";
+      appendIfPresent(resCorrectedSaveWrap, createListenButton(fb.corrected));
       resCorrectedSaveWrap.appendChild(
         createSaveToVocabButton(fb.corrected, record.text, "")
       );
@@ -369,8 +412,13 @@
         ""
       );
 
+      const actions = document.createElement("div");
+      actions.className = "item-actions";
+      appendIfPresent(actions, createListenButton(item.expression));
+      actions.appendChild(saveBtn);
+
       topRow.appendChild(expr);
-      topRow.appendChild(saveBtn);
+      topRow.appendChild(actions);
 
       const nuance = document.createElement("div");
       nuance.className = "alt-nuance";
@@ -409,12 +457,16 @@
       topRow.appendChild(expr);
       topRow.appendChild(saveBtn);
 
+      const exRow = document.createElement("div");
+      exRow.className = "key-example-row";
       const ex = document.createElement("div");
       ex.className = "key-example";
       ex.textContent = `"${item.example}"`;
+      exRow.appendChild(ex);
+      appendIfPresent(exRow, createListenButton(item.example));
 
       li.appendChild(topRow);
-      li.appendChild(ex);
+      li.appendChild(exRow);
       resKeys.appendChild(li);
     });
   }
@@ -1293,6 +1345,8 @@
       appendedResults = new Set();
       addedThisSession = false;
       endNoticeShown = false;
+      // 앱이 읽는 소리를 내 말로 알아듣지 않게 읽기를 먼저 멈춘다.
+      stopSpeaking();
       try {
         recognition.start();
       } catch (_) {
