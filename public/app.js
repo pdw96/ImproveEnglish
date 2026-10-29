@@ -1229,8 +1229,10 @@
     });
 
     recognition.addEventListener("result", (event) => {
+      // 미리보기는 매번 남은 확정 전 결과 전부로 다시 만든다 — 바뀐 결과(resultIndex)부터만 보면 앞의 확정 전
+      // 글자가 빠진다. 확정 결과는 번호로 한 번만 붙이므로 처음부터 다시 훑어도 겹치지 않는다.
       let interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      for (let i = 0; i < event.results.length; i += 1) {
         const result = event.results[i];
         const transcript = (result[0] && result[0].transcript ? result[0].transcript : "").trim();
         if (!transcript) continue;

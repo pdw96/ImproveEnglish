@@ -40,7 +40,6 @@ class TestSlice7SpeakingPracticePR1(unittest.TestCase):
         self.assertRegex(self.block, r"recognition\.continuous\s*=\s*true")
         self.assertNotRegex(self.block, r"recognition\.continuous\s*=\s*false")
         result = handler(self.block, "result")
-        self.assertIn("event.resultIndex", result)
         self.assertIn("isFinal", result)
         self.assertRegex(result, r"appendedResults\.has\(i\)")
         self.assertRegex(result, r"appendedResults\.add\(i\)")
@@ -60,6 +59,9 @@ class TestSlice7SpeakingPracticePR1(unittest.TestCase):
         )
         result = handler(self.block, "result")
         self.assertIn("showVoiceInterim(interim)", result)
+        # 미리보기는 모든 결과에서 다시 만든다 — 바뀐 결과(resultIndex)부터만 훑으면 앞의 확정 전 글자가 빠진다
+        self.assertRegex(result, r"for \(let i = 0; i < event\.results\.length")
+        self.assertNotRegex(result, r"let i = event\.resultIndex")
         # 확정 전 글자를 입력창에 쓰는 줄이 없다 — 입력창 쓰기는 appendVoiceText 한 곳뿐이다
         self.assertNotRegex(result, r"sentenceInput\.value\s*=")
         self.assertIn("hideVoiceInterim()", handler(self.block, "end"))
