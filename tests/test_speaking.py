@@ -232,5 +232,23 @@ class TestSlice7SpeakingPracticePR3(unittest.TestCase):
         self.assertNotIn("appendVoiceText(transcript)", commit)
 
 
+class TestSlice7VoiceDebug(unittest.TestCase):
+    """설계 끝 「Android 미리보기 진단」 — 임시 진단은 ?voice-debug 일 때만 생기고 화면에만 쓴다."""
+
+    def test_voice_debug_only_with_query_and_text_only(self) -> None:
+        block = speech_block()
+        self.assertRegex(block, r'const voiceDebugEl = /\[\?&\]voice-debug\\b/\.test\(window\.location\.search\) \? document\.createElement\("pre"\) : null;')
+        body = function_body_in(block, "voiceDebug")
+        self.assertIn("if (!voiceDebugEl) return;", body)
+        self.assertIn("voiceDebugEl.textContent", body)
+        # 화면에만 쓴다 — HTML 로 넣지 않고, 저장하거나 보내지 않는다
+        self.assertNotIn("innerHTML", body)
+        self.assertNotRegex(block, r"voiceDebug[\s\S]{0,200}(localStorage|fetch\()")
+        # 결과 · 시작 · 끝 · 오류를 모두 남긴다
+        for name in ("start", "result", "error", "end"):
+            with self.subTest(event=name):
+                self.assertIn("voiceDebug", handler(block, name))
+
+
 if __name__ == "__main__":
     unittest.main()
