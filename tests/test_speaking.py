@@ -1,4 +1,4 @@
-"""조각 7(speaking-practice) 정적 시험 — 설계 ② 보장 [P1] ~ [P4](PR 1) · [P5] ~ [P7](PR 2).
+"""조각 7(speaking-practice) 정적 시험 — 설계 ② 보장 [P1] ~ [P4](PR 1) · [P5] ~ [P7](PR 2) · 설계 끝 덧붙임 [P8] · [P9](PR 3).
 
 이 레포 시험은 Python 이라 브라우저 음성 기능을 돌리지 못한다. `public/app.js` · `public/index.html` 을 읽어
 보장마다 「있어야 할 장치」와 「없어야 할 옛 장치」를 함께 본다. 실제 동작은 PR 마다 Chromium 화면 확인으로 본다(설계 ⑤).
@@ -22,6 +22,13 @@ def speech_block() -> str:
     return APP_JS[start:end]
 
 
+def function_body_in(block: str, name: str) -> str:
+    """`block` 안에 든 안쪽 함수 `function <name>(` 의 몸 — 4칸 들여쓴 닫는 괄호까지."""
+    start = block.index(f"function {name}(")
+    end = block.index("\n    }\n", start)
+    return block[start:end]
+
+
 def handler(block: str, name: str) -> str:
     """`recognition.addEventListener("<name>", ...)` 의 몸."""
     start = block.index(f'recognition.addEventListener("{name}"')
@@ -43,11 +50,12 @@ class TestSlice7SpeakingPracticePR1(unittest.TestCase):
         self.assertIn("isFinal", result)
         self.assertRegex(result, r"appendedResults\.has\(i\)")
         self.assertRegex(result, r"appendedResults\.add\(i\)")
-        self.assertIn("appendVoiceText(", result)
+        self.assertIn("commitVoice(transcript)", result)
+        self.assertIn("appendVoiceText(", function_body_in(self.block, "commitVoice"))
         # 옛 꼴 — 매번 첫 결과만 읽던 줄
         self.assertNotIn("event.results[0][0]", result)
-        # 새로 누를 때 번호 기억을 비운다(새 듣기는 번호가 0 부터다)
-        self.assertRegex(self.block, r"appendedResults\s*=\s*new Set\(\)")
+        # 듣기가 (다시) 시작될 때마다 번호 기억을 비운다(새 듣기는 번호가 0 부터다)
+        self.assertRegex(handler(self.block, "start"), r"appendedResults\s*=\s*new Set\(\)")
 
     def test_p2_interim_goes_to_preview_line_only(self) -> None:
         """[P2] 확정 전 글자는 미리보기 줄(#voice-interim)에만 쓰고, 듣기가 끝나면 비우고 숨긴다."""
@@ -67,20 +75,23 @@ class TestSlice7SpeakingPracticePR1(unittest.TestCase):
         self.assertIn("hideVoiceInterim()", handler(self.block, "end"))
 
     def test_p3_end_restores_button_and_keeps_text(self) -> None:
-        """[P3] 어떻게 끝나든 버튼이 [마이크로 말하기] 로 돌아오고 미리보기 줄이 숨으며, 확정 글자는 지우지 않는다."""
+        """[P3] 듣기를 마치면(종료 버튼 · 오류 · 상한 · 말 없음) 버튼이 [마이크로 말하기] 로 돌아오고 미리보기 줄이 숨으며,
+        확정 글자는 지우지 않는다. 브라우저가 스스로 끝낸 경우는 [P8] 대로 다시 켠다(설계 끝 덧붙임)."""
         end = handler(self.block, "end")
-        self.assertIn('voiceBtn.textContent = "마이크로 말하기"', end)
-        self.assertIn('voiceBtn.classList.remove("recording")', end)
+        finish = self.block[self.block.index("finishListeningUi = () => {"):self.block.index("\n    };", self.block.index("finishListeningUi = () => {"))]
+        self.assertIn('voiceBtn.textContent = "마이크로 말하기"', finish)
+        self.assertIn('voiceBtn.classList.remove("recording")', finish)
+        self.assertIn("hideVoiceInterim()", finish)
+        self.assertIn("finishListeningUi();", end)
         self.assertIn("isRecording = false", end)
         self.assertNotRegex(end, r"sentenceInput\.value\s*=")
-        # 브라우저가 끝내도 스스로 다시 켜지 않는다(설계 ④)
-        self.assertNotIn("recognition.start()", end)
+        self.assertNotRegex(finish, r"sentenceInput\.value\s*=")
         # 권한 거부는 따로 안내한다
         error = handler(self.block, "error")
         self.assertIn('"not-allowed"', error)
         self.assertIn("마이크 권한을 허용해 주세요", error)
         # 확정 글자가 붙으면 입력 모드는 음성이다
-        self.assertIn('setInputMode("voice")', handler(self.block, "result"))
+        self.assertIn('setInputMode("voice")', function_body_in(self.block, "commitVoice"))
 
     def test_p4_stops_at_1000_chars_and_never_overflows(self) -> None:
         """[P4] 1,000자에 닿으면 듣기를 멈추고 안내하며, 넘는 부분은 잘라 붙이지 않는다."""
@@ -89,9 +100,10 @@ class TestSlice7SpeakingPracticePR1(unittest.TestCase):
         append = APP_JS[start:APP_JS.index("\n  }\n", start)]
         self.assertIn("VOICE_MAX_CHARS - current.length", append)
         self.assertIn("text.slice(0, room)", append)
-        result = handler(self.block, "result")
-        self.assertRegex(result, r"VOICE_MAX_CHARS[\s\S]*recognition\.stop\(\)")
-        self.assertIn("최대 1,000자", result)
+        commit = function_body_in(self.block, "commitVoice")
+        self.assertRegex(commit, r"VOICE_MAX_CHARS[\s\S]*stopListening\(\)")
+        self.assertIn("최대 1,000자", commit)
+        self.assertRegex(handler(self.block, "result"), r"if \(!commitVoice\(transcript\)\) return;")
         # 옛 꼴 — 길이를 보지 않고 그대로 이어 붙이던 줄
         self.assertNotRegex(APP_JS, r"sentenceInput\.value\.trim\(\)\} \$\{transcript\}")
         # 이미 1,000자면 듣기를 시작하지 않는다
@@ -134,9 +146,12 @@ class TestSlice7SpeakingPracticePR2(unittest.TestCase):
         self.assertRegex(block, r"stopSpeaking\(\);\s*try \{\s*recognition\.start\(\)")
         self.assertNotRegex(block, r"recognition\.start\(\);[\s\S]{0,40}stopSpeaking\(\)")
         speak = function_body("speakEnglish")
-        # 읽기 전에 듣기를 끝낸다 — abort() 는 말한 글을 버리므로 쓰지 않는다
-        self.assertRegex(speak, r"if \(isRecording && recognition\) recognition\.stop\(\);[\s\S]*speechSynthesis\.speak\(")
-        self.assertNotIn("recognition.abort()", speak)
+        # 읽기 전에 듣기를 끝낸다 — 다시 켜기를 기다리는 중이어도 끝낸다
+        self.assertRegex(speak, r"if \(keepListening \|\| isRecording\) stopListening\(\);[\s\S]*speechSynthesis\.speak\(")
+        stop = function_body("stopListening")
+        # abort() 는 말한 글을 버리므로 쓰지 않는다
+        self.assertRegex(stop, r"keepListening = false;[\s\S]*recognition\.stop\(\)")
+        self.assertNotIn("recognition.abort()", APP_JS)
 
     def test_p7_no_listen_button_without_speech_synthesis(self) -> None:
         """[P7] 음성 합성이 없거나 읽을 글이 비면 [듣기]를 그리지 않고, 나머지(단어장 담기)는 그대로 그린다."""
@@ -151,6 +166,50 @@ class TestSlice7SpeakingPracticePR2(unittest.TestCase):
         self.assertEqual(render.count("appendIfPresent("), 3)
         self.assertNotRegex(render, r"\.appendChild\(createListenButton\(")
         self.assertIn("createSaveToVocabButton(", render)
+
+
+
+class TestSlice7SpeakingPracticePR3(unittest.TestCase):
+    """설계 끝 「실제 기기 확인(Android Chrome) 뒤 덧붙임」 [P8] · [P9]."""
+
+    def setUp(self) -> None:
+        self.block = speech_block()
+
+    def test_p8_restarts_until_user_stops(self) -> None:
+        """[P8] [말하기 종료]를 누르기 전에 브라우저가 끝내면 다시 켠다. 종료 · 치명 오류 · 상한 · 말 없음 3번이면 그만둔다."""
+        end = handler(self.block, "end")
+        self.assertRegex(end, r"if \(keepListening\) \{[\s\S]*setTimeout\([\s\S]*recognition\.start\(\)[\s\S]*return;")
+        self.assertRegex(end, r"if \(!keepListening\) return;")
+        # 말소리 없이 연달아 끝나면 그만둔다
+        self.assertRegex(self.block, r"const VOICE_IDLE_RESTART_LIMIT = 3;")
+        self.assertRegex(end, r"idleSessions >= VOICE_IDLE_RESTART_LIMIT\) \{\s*keepListening = false;")
+        # 누르면 켜 두기, 다시 누르면 그만두기
+        click = self.block[self.block.index('voiceBtn.addEventListener("click"'):]
+        self.assertRegex(click, r"if \(keepListening \|\| isRecording\) \{\s*stopListening\(\);\s*return;")
+        self.assertRegex(click, r"keepListening = true;[\s\S]*recognition\.start\(\)")
+        stop = function_body("stopListening")
+        self.assertIn("clearTimeout(restartTimer)", stop)
+        # 권한 · 마이크 · 네트워크 오류는 다시 켜지 않는다. 말 없음(no-speech)은 다시 켠다
+        error = handler(self.block, "error")
+        self.assertRegex(error, r"if \(!FATAL_ERRORS\.has\(code\)\) return;\s*keepListening = false;")
+        fatal = self.block[self.block.index("const FATAL_ERRORS"):self.block.index("]);", self.block.index("const FATAL_ERRORS"))]
+        self.assertIn('"not-allowed"', fatal)
+        self.assertNotIn('"no-speech"', fatal)
+
+    def test_p9_android_zero_confidence_is_interim_and_not_lost(self) -> None:
+        """[P9] isFinal 이어도 confidence 가 0 이면 확정 전으로 미리보기에 두고, 확정 없이 끝나면 그 글을 붙인다. 같은 문장은 한 번만."""
+        result = handler(self.block, "result")
+        self.assertRegex(result, r"const isFinal = result\.isFinal && !\(alt && alt\.confidence === 0\);")
+        self.assertRegex(result, r"if \(isFinal\) \{")
+        self.assertNotRegex(result, r"if \(result\.isFinal\) \{")
+        end = handler(self.block, "end")
+        self.assertRegex(end, r"if \(pendingInterim && !lastEventCommitted\) commitVoice\(pendingInterim\);")
+        commit = function_body_in(self.block, "commitVoice")
+        self.assertRegex(commit, r"if \(!key \|\| key === lastCommitted\) return true;")
+        # 누적 문장(앞 문장 + 새 말)은 새 말만 붙인다
+        self.assertRegex(commit, r"key\.startsWith\(`\$\{lastCommitted\} `\)[\s\S]*\.slice\(lastCommitted\.split\(\" \"\)\.length\)")
+        self.assertIn("appendVoiceText(piece)", commit)
+        self.assertNotIn("appendVoiceText(transcript)", commit)
 
 
 if __name__ == "__main__":
