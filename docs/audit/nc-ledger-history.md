@@ -109,6 +109,13 @@
 - 관찰: OB-1 (`public/standalone-engine.js`의 `handleLocalApiRequest`가 기존 파이썬 서버의 9개 `/api/*` 경로(`GET /api/history`, `POST /api/feedback`, `GET/POST /api/vocab`, `POST /api/vocab/review`, `DELETE /api/vocab/<id>`, `GET /api/routine`, `POST /api/routine/goal`, `GET /api/mission/today`)와 100% 동일한 JSON 응답 필드·상태 코드를 반환하여 프론트엔드 코드 변경 없이 단독 실행과 서버 연동을 모두 지원함)
 - 담당 없음: 없음
 
+## 회차 12 — `audit-secrets` · 조각 6 `api-key-vault` (2026-10-29)
 
-
-
+- **감사한 커밋**: 모름(기록 머리 — 감사자가 본 작업 트리 머리는 `71011d7`, 브리핑 없음) · **감사자**: `audit-secrets`
+- 기록: `.claude/audits/audit-secrets-2026-10-29-075446.md`
+- 낸 것: NC-1(낮음) · U-1 · U-2
+- 지난 회차: 회차 1 · 회차 9 (`audit-secrets`, 이어 받은 NC · U 없음)
+- 관찰: OB-1(해제 중 설정 탭이 키 앞 4자 · 뒤 4자를 보인다) · OB-2(이미 해제된 창에서는 아무 비밀번호나 「해제되었습니다」가 된다) · OB-3(설정 카드 문구가 설계 ② 의 한계보다 강하게 말한다 — 키는 첨삭마다 Google 로 가고, 4자리 PIN 은 저장소 복사에 풀린다) · OB-4(PBKDF2 100,000회는 OWASP 2023 권장 600,000회보다 낮다 — 설계 ④ 에서 저자가 고른 값)
+- 담당 없음: 없음
+- 판정(2026-10-29, 저자): NC-1 고침 · U-1 닫힘(다른 Pages 사이트 없음) · U-2 저자 기기 확인 대기
+- 판정 덧붙임(2026-10-29, 저자): U-2 닫힘 — 저자 Android 폰에서 밀어 닫기 · 브라우저 재시작 · 탭 복제 뒤 모두 잠김
