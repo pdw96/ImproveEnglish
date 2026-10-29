@@ -60,3 +60,35 @@
 - 리뷰 한도: 2회차를 넘기면 소유자(저자)가 직접 판정한다.
 - 감사 회차: 닫기 전 — `audit-secrets`(바뀌는 것이 자격증명의 보관 · 암호화 · 해제 상태의 경계라서. 조각
   standalone-mobile-app 의 `audit-secrets` 회차 9 는 평문 보관만 봤다)
+
+## 닫으며 (2026-10-29)
+
+- **계획과 달랐던 것**
+  - 사후 착공이라 구현 세 커밋이 문서보다 먼저 섰다(「사후 착공」).
+  - 설계 ⑥ 은 PR 1 하나였지만, 닫기 전 감사가 낸 것을 고치느라 PR 2 · PR 3 이 붙었다(설계 끝 두 2026-10-29 항목).
+  - 성공 기준 하나는 범위가 좁아졌다. **[키 삭제] 가 다섯 값을 지우는 것은 누른 그 탭에서만이다.** 다른 탭에서 금고를 풀어 두었다면 그 탭은 닫을 때까지 옛 키를 쓰고, 그 탭에서는 어떤 비밀번호에나 「해제되었습니다」가 나온다(NC-2, 저자 판정 — 한계로 받아들임).
+
+- **성공 기준마다 무엇에 대어 봤나**
+
+| 성공 기준 | 대어 본 것 | 결과 |
+|---|---|---|
+| 비밀번호와 함께 저장하면 평문 키가 남지 않고 암호문 · 소금 · 초기값만 남는다 | `test_v1_encrypted_storage_holds_only_cipher_salt_iv` · `test_v1_salt_and_iv_are_new_each_save`(Node 로 엔진 실행) | 맞음 |
+| 맞는 비밀번호로 풀리고, 틀린 비밀번호는 「일치하지 않습니다」 · 저장 값 그대로 | `test_v2_*` 셋, Chromium 화면(틀린 비밀번호 · 해제), 저자 폰 캡처(해제 직후) | 맞음 — 잠긴 탭에서. 이미 풀린 탭에서는 아무 비밀번호에나 「해제되었습니다」(감사 회차 12 · 14 관찰) |
+| 새로고침하면 해제 유지, 창을 닫았다 열면 잠김 | `test_v3_reload_keeps_unlock_and_reopen_locks`, 저자 Android 폰 — 밀어 닫기 · 탭 복제(캡처), 브라우저 재시작 · 닫은 탭 다시 열기(진술) | 맞음 — 저자 폰 한 대에서 |
+| 잠긴 동안 배지 · 안내 줄이 잠김을 보이고 첨삭은 내장 코치 | `test_v4_locked_feedback_uses_coach_not_gemini` · `test_v4_badge_has_locked_state`, Chromium 화면, 저자 폰 캡처 | 맞음 |
+| 1 ~ 3자 비밀번호는 저장하지 않고 「4자 이상」 안내 | `test_v5_short_pin_is_rejected_without_touching_storage` · `test_v5_screen_rejects_short_pin_before_saving`, Chromium 화면 | 맞음 |
+| 빈 비밀번호는 평문 보관(호환), [키 삭제] 는 다섯 값을 모두 지움 | `test_v5_empty_pin_keeps_plain_storage` · `test_v5_plain_save_after_unlock_replaces_old_key` · `test_v6_clear_removes_all_five_values` | 맞음 — 삭제는 누른 그 탭에서(위 「계획과 달랐던 것」) |
+| 백업 파일에 키 · 금고 값이 없음 | `test_v7_backup_excludes_vault_values` | 맞음 |
+
+- **더 고친 것** — 키 저장이 실패하면 성공 문구 대신 「키를 저장하지 못했습니다」를 보인다(PR 3, `test_save_failure_is_shown_not_swallowed`, Chromium 화면).
+- **돌린 감사 회차** — 모두 `audit-secrets` 이고, 기록은 `docs/audit/nc-ledger-history.md` 에 있다.
+  - 회차 12: NC-1 · U-1 · U-2 를 냈다.
+  - 회차 13: NC-1 을 닫고 NC-2 를 냈다.
+  - 회차 14: NC-2 를 닫았다. 열린 NC · 확인불가는 없다.
+- **넘긴 것** — 없음. NC-2 와 관찰들은 설계 ② 의 알려진 한계로 받아들였다.
+  - 다시 볼 때: 설치한 앱과 브라우저 탭을 함께 열어 두 창으로 쓰게 되면 NC-2 를 다시 본다.
+  - 감사가 다른 감사자에게 넘긴 자리가 셋 있다. 조각 나눔의 줄은 아니고, 그 감사자의 회차가 올 때 본다.
+    - 시험의 충분함(두 탭 장면 · 실패를 실제로 일으키는 시험): `audit-quality`
+    - 저장이 중간에 실패할 때 금고 값 넷의 일관성: `audit-data`
+    - 이 요구사항 문장과 설계 덧붙임의 어긋남: `audit-internal`. 이 「닫으며」가 그 어긋남(삭제 범위 · 이미 풀린 탭)을 적었다.
+- **다음 조각** — speaking-practice
