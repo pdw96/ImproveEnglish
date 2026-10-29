@@ -75,7 +75,9 @@ class TestSlice7SpeakingPracticePR1(unittest.TestCase):
         self.assertNotRegex(result, r"let i = event\.resultIndex")
         # 확정 전 글자를 입력창에 쓰는 줄이 없다 — 입력창 쓰기는 appendVoiceText 한 곳뿐이다
         self.assertNotRegex(result, r"sentenceInput\.value\s*=")
-        self.assertIn("hideVoiceInterim()", handler(self.block, "end"))
+        # 듣기를 마치면 미리보기 줄을 숨긴다(다시 켜는 동안은 「듣는 중…」 — P10)
+        finish = self.block[self.block.index("finishListeningUi = () => {"):]
+        self.assertIn("hideVoiceInterim()", finish[:finish.index("\n    };")])
 
     def test_p3_end_restores_button_and_keeps_text(self) -> None:
         """[P3] 듣기를 마치면(종료 버튼 · 오류 · 상한 · 말 없음) 버튼이 [마이크로 말하기] 로 돌아오고 미리보기 줄이 숨으며,
@@ -232,23 +234,25 @@ class TestSlice7SpeakingPracticePR3(unittest.TestCase):
         self.assertNotIn("appendVoiceText(transcript)", commit)
 
 
-class TestSlice7VoiceDebug(unittest.TestCase):
-    """설계 끝 「Android 미리보기 진단」 — 임시 진단은 ?voice-debug 일 때만 생기고 화면에만 쓴다."""
+class TestSlice7ListeningIndicator(unittest.TestCase):
+    """설계 끝 「진단 뒤 판정」 [P10] — 듣는 동안 확정 전 글자가 없으면 「듣는 중…」, 임시 진단은 뺐다."""
 
-    def test_voice_debug_only_with_query_and_text_only(self) -> None:
+    def test_p10_listening_indicator_and_debug_removed(self) -> None:
         block = speech_block()
-        self.assertRegex(block, r'const voiceDebugEl = /\[\?&\]voice-debug\\b/\.test\(window\.location\.search\) \? document\.createElement\("pre"\) : null;')
-        body = function_body_in(block, "voiceDebug")
-        self.assertIn("if (!voiceDebugEl) return;", body)
-        self.assertIn("voiceDebugEl.textContent", body)
-        # 화면에만 쓴다 — HTML 로 넣지 않고, 저장하거나 보내지 않는다
-        self.assertNotIn("innerHTML", body)
-        self.assertNotRegex(block, r"voiceDebug[\s\S]{0,200}(localStorage|fetch\()")
-        # 결과 · 시작 · 끝 · 오류를 모두 남긴다
-        for name in ("start", "result", "error", "end"):
-            with self.subTest(event=name):
-                self.assertIn("voiceDebug", handler(block, name))
-
+        show = function_body("showVoiceInterim")
+        self.assertIn("const listening = keepListening || isRecording || isStarting;", show)
+        self.assertIn('voiceInterim.textContent = text || (listening ? "듣는 중…" : "");', show)
+        self.assertIn('voiceInterim.classList.toggle("is-listening", !text && listening);', show)
+        self.assertIn('classList.remove("is-listening")', function_body("hideVoiceInterim"))
+        # 켜질 때 보이고, 다시 켜는 동안 남는다
+        self.assertIn('showVoiceInterim("");', handler(block, "start"))
+        self.assertIn('showVoiceInterim("");', handler(block, "end"))
+        self.assertNotIn("hideVoiceInterim()", handler(block, "end"))
+        # 임시 진단(?voice-debug)은 원인을 확인한 뒤 뺐다
+        styles = (REPO_ROOT / "public" / "styles.css").read_text(encoding="utf-8")
+        for text in (APP_JS, styles):
+            self.assertNotIn("voice-debug", text)
+        self.assertNotIn("voiceDebug", APP_JS)
 
 if __name__ == "__main__":
     unittest.main()

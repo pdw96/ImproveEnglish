@@ -435,19 +435,8 @@ input[type="number"]:focus {
   overflow-wrap: anywhere;
 }
 
-/* 진단(임시) — ?voice-debug 일 때만 생긴다 */
-.voice-debug-log {
-  margin: 0.45rem 0 0;
-  max-height: 14rem;
-  overflow: auto;
-  padding: 0.5rem;
-  border: 1px dashed var(--border-strong);
-  border-radius: 6px;
-  background: var(--surface-subtle);
-  font-size: 0.72rem;
-  line-height: 1.35;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+.voice-interim.is-listening {
+  font-style: normal;
 }
 
 .char-counter {
