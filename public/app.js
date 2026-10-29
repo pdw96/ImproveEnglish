@@ -1327,15 +1327,16 @@
     };
 
     // 확정된 문장을 입력창에 붙인다. 1,000자에 닿으면 듣기를 끝내고 false 를 돌려준다.
-    function commitVoice(transcript) {
+    // fullKey 는 transcript 가 늘어난 부분만일 때 그 결과의 전체 글 — 다음 누적 결과를 알아보는 기준으로 남긴다.
+    function commitVoice(transcript, fullKey) {
       const key = normalizeVoice(transcript);
-      if (!key || key === lastCommitted) return true;
+      if (!key || (fullKey || key) === lastCommitted) return true;
       let piece = transcript.trim();
       // Android 는 앞 문장에 새 말을 이어 붙인 누적 문장을 보내기도 한다 — 앞에 붙인 부분은 빼고 새 말만 붙인다.
-      if (lastCommitted && key.startsWith(`${lastCommitted} `)) {
+      if (!fullKey && lastCommitted && key.startsWith(`${lastCommitted} `)) {
         piece = dropWords(piece, lastCommitted.split(" ").length);
       }
-      lastCommitted = key;
+      lastCommitted = fullKey || key;
       const fitted = appendVoiceText(piece);
       addedThisListen = true;
       committedThisSession = true;
@@ -1356,13 +1357,14 @@
     function commitIndex(i, transcript) {
       const key = normalizeVoice(transcript);
       const prev = committedByIndex.get(i);
-      let piece = transcript;
       if (prev !== undefined) {
         if (key === prev || !covers(key, prev)) return true;
-        piece = dropWords(transcript, prev.split(" ").length);
+        committedByIndex.set(i, key);
+        // 늘어난 부분만 붙이되, 다음 누적 결과의 기준은 전체 글로 남긴다.
+        return commitVoice(dropWords(transcript, prev.split(" ").length), key);
       }
       committedByIndex.set(i, key);
-      return commitVoice(piece);
+      return commitVoice(transcript);
     }
 
     // 남은 확정 전 결과를 차례로 붙인다. covering(바로 뒤 확정 결과)이 앞부분째 덮는 결과는 그 확정 결과가 대신한다.

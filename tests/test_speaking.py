@@ -222,9 +222,12 @@ class TestSlice7SpeakingPracticePR3(unittest.TestCase):
         self.assertRegex(preview, r"if \(last && covers\(key, last\.key\)\) parts\[parts\.length - 1\]")
         self.assertRegex(preview, r"else if \(last && covers\(last\.key, key\)\) continue;")
         commit = function_body_in(self.block, "commitVoice")
-        self.assertRegex(commit, r"if \(!key \|\| key === lastCommitted\) return true;")
+        self.assertRegex(commit, r"if \(!key \|\| \(fullKey \|\| key\) === lastCommitted\) return true;")
+        # 늘어난 부분만 붙일 때도 다음 누적 결과의 기준은 전체 글이다(리뷰 3회차)
+        self.assertIn("lastCommitted = fullKey || key;", commit)
+        self.assertRegex(function_body_in(self.block, "commitIndex"), r"return commitVoice\(dropWords\(transcript, prev\.split\(\" \"\)\.length\), key\);")
         # 누적 문장(앞 문장 + 새 말)은 새 말만 붙인다
-        self.assertRegex(commit, r"key\.startsWith\(`\$\{lastCommitted\} `\)\) \{\s*piece = dropWords\(piece, lastCommitted\.split\(\" \"\)\.length\)")
+        self.assertRegex(commit, r"if \(!fullKey && lastCommitted && key\.startsWith\(`\$\{lastCommitted\} `\)\) \{\s*piece = dropWords\(piece, lastCommitted\.split\(\" \"\)\.length\)")
         self.assertIn("appendVoiceText(piece)", commit)
         self.assertNotIn("appendVoiceText(transcript)", commit)
 
