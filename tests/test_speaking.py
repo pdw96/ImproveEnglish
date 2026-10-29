@@ -1,4 +1,4 @@
-"""조각 7(speaking-practice) 정적 시험 — 설계 ② 보장 [P1] ~ [P4](PR 1).
+"""조각 7(speaking-practice) 정적 시험 — 설계 ② 보장 [P1] ~ [P4](PR 1) · [P5] ~ [P7](PR 2).
 
 이 레포 시험은 Python 이라 브라우저 음성 기능을 돌리지 못한다. `public/app.js` · `public/index.html` 을 읽어
 보장마다 「있어야 할 장치」와 「없어야 할 옛 장치」를 함께 본다. 실제 동작은 PR 마다 Chromium 화면 확인으로 본다(설계 ⑤).
@@ -96,6 +96,61 @@ class TestSlice7SpeakingPracticePR1(unittest.TestCase):
         self.assertNotRegex(APP_JS, r"sentenceInput\.value\.trim\(\)\} \$\{transcript\}")
         # 이미 1,000자면 듣기를 시작하지 않는다
         self.assertRegex(self.block, r"sentenceInput\.value\.length >= VOICE_MAX_CHARS\)\s*\{\s*showStatus")
+
+
+def function_body(name: str) -> str:
+    """`function <name>(` 부터 다음 최상위 함수 앞까지."""
+    start = APP_JS.index(f"function {name}(")
+    end = APP_JS.index("\n  function ", start + 1)
+    return APP_JS[start:end]
+
+
+class TestSlice7SpeakingPracticePR2(unittest.TestCase):
+    """설계 ② 보장하는 것 [P5] ~ [P7]."""
+
+    def test_p5_listen_buttons_on_feedback_note_only(self) -> None:
+        """[P5] 교정 문장 · 추천 표현 · 핵심 표현 예문마다 [듣기]가 있고 en-US 로 읽으며, 새로 누르면 앞 소리를 멈춘다."""
+        render = function_body("renderRecord")
+        self.assertIn("createListenButton(fb.corrected)", render)
+        self.assertIn("createListenButton(item.expression)", render)
+        self.assertIn("createListenButton(item.example)", render)
+        # 원문(내가 쓴 글)과 핵심 표현 낱말만은 읽지 않는다(설계 ④)
+        self.assertNotIn("createListenButton(record.text)", render)
+        self.assertEqual(render.count("createListenButton("), 3)
+        # 첨삭 노트에만 단다 — 단어장 복습 · 미션 화면에는 없다(요구사항 하지 않을 일 4)
+        self.assertEqual(APP_JS.count("createListenButton("), 4)  # 정의 1 + renderRecord 3
+        speak = function_body("speakEnglish")
+        self.assertRegex(speak, r'utterance\.lang\s*=\s*"en-US"')
+        self.assertRegex(speak, r"stopSpeaking\(\);[\s\S]*speechSynthesis\.speak\(utterance\)")
+        self.assertIn("speechSynthesis.cancel()", function_body("stopSpeaking"))
+        # 속도 조절 · 목소리 고르기는 넣지 않는다(하지 않을 일 5)
+        self.assertNotRegex(APP_JS, r"utterance\.(rate|pitch)\s*=")
+        # 이전 기록을 열 때도 같은 renderRecord 를 쓴다
+        self.assertRegex(APP_JS, r'li\.addEventListener\("click", \(\) => \{[\s\S]{0,80}renderRecord\(item\)')
+
+    def test_p6_mic_start_stops_speaking_first(self) -> None:
+        """[P6] 마이크를 켜면 읽던 소리를 먼저 멈추고, 듣는 중에 [듣기]를 누르면 말하기를 먼저 끝낸다(설계 끝 덧붙임)."""
+        block = speech_block()
+        self.assertRegex(block, r"stopSpeaking\(\);\s*try \{\s*recognition\.start\(\)")
+        self.assertNotRegex(block, r"recognition\.start\(\);[\s\S]{0,40}stopSpeaking\(\)")
+        speak = function_body("speakEnglish")
+        # 읽기 전에 듣기를 끝낸다 — abort() 는 말한 글을 버리므로 쓰지 않는다
+        self.assertRegex(speak, r"if \(isRecording && recognition\) recognition\.stop\(\);[\s\S]*speechSynthesis\.speak\(")
+        self.assertNotIn("recognition.abort()", speak)
+
+    def test_p7_no_listen_button_without_speech_synthesis(self) -> None:
+        """[P7] 음성 합성이 없거나 읽을 글이 비면 [듣기]를 그리지 않고, 나머지(단어장 담기)는 그대로 그린다."""
+        self.assertRegex(
+            APP_JS,
+            r'const canSpeak =\s*"speechSynthesis" in window && typeof window\.SpeechSynthesisUtterance === "function";',
+        )
+        listen = function_body("createListenButton")
+        self.assertRegex(listen, r"if \(!canSpeak \|\| !trimmed\) return null;")
+        render = function_body("renderRecord")
+        # [듣기]는 있을 때만 붙인다 — null 을 그대로 appendChild 하면 첨삭 노트 그리기가 멈춘다
+        self.assertEqual(render.count("appendIfPresent("), 3)
+        self.assertNotRegex(render, r"\.appendChild\(createListenButton\(")
+        self.assertIn("createSaveToVocabButton(", render)
 
 
 if __name__ == "__main__":
