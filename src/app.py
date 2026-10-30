@@ -1,4 +1,4 @@
-"""첨삭(POST /api/feedback, GET /api/history), 단어장·복습(GET/POST /api/vocab, POST /api/vocab/review, DELETE /api/vocab/<id>), 학습 루틴(GET /api/routine, POST /api/routine/goal) 및 정적 웹 화면을 제공하는 로컬 서버."""
+"""첨삭(POST /api/feedback, GET /api/history), 단어장·복습(GET/POST /api/vocab, POST /api/vocab/review, DELETE /api/vocab/<id>), 학습 루틴(GET /api/routine, POST /api/routine/goal), 오늘의 퀴즈(GET/POST /api/quiz/today, POST /api/quiz/attempt) 및 정적 웹 화면을 제공하는 로컬 서버."""
 
 from __future__ import annotations
 
@@ -23,6 +23,9 @@ from src.feedback_types import (
 from src.gemini import GeminiServiceError, generate_feedback, load_dotenv_file
 from src.history_store import HistoryStore
 from src.mission_service import build_daily_mission_status
+from src.quiz_service import build_daily_quiz
+from src.quiz_store import QuizDateMismatch, QuizStore
+from src.quiz_types import NOT_ENOUGH_MESSAGE, QuizAttemptRequest
 from src.routine_store import RoutineStore
 from src.routine_types import DailyGoal
 from src.vocab_store import VocabStore
@@ -42,10 +45,12 @@ class FeedbackApp:
         public_dir: pathlib.Path | None = None,
         vocab_store: VocabStore | None = None,
         routine_store: RoutineStore | None = None,
+        quiz_store: QuizStore | None = None,
     ) -> None:
         self.store = store or HistoryStore()
         self.vocab_store = vocab_store or VocabStore()
         self.routine_store = routine_store or RoutineStore()
+        self.quiz_store = quiz_store or QuizStore()
         self._custom_ai_fn = ai_fn
         self.public_dir = public_dir or PUBLIC_DIR
 
@@ -258,6 +263,62 @@ class FeedbackApp:
             return HTTPStatus.BAD_REQUEST, {"error": str(exc)}
         return HTTPStatus.OK, result
 
+    def handle_get_quiz_today(
+        self, today: date | None = None
+    ) -> tuple[int, dict[str, object]]:
+        """오늘 세트(있으면)와 오늘 점수 줄을 돌려준다. 세트를 만들지 않는다 — AI 를 부르지 않는다([Q4])."""
+        base_today = today or date.today()
+        quiz, score = self.quiz_store.get_today_state(base_today)
+        return HTTPStatus.OK, {
+            "today": base_today.isoformat(),
+            "quiz": quiz.to_dict() if quiz is not None else None,
+            "score": score.to_dict() if score is not None else None,
+        }
+
+    def handle_post_quiz_today(
+        self, today: date | None = None
+    ) -> tuple[int, dict[str, object]]:
+        """[퀴즈 시작] — 오늘 세트가 없으면 만들어 저장하고, 있으면 같은 세트를 돌려준다([Q1] · [Q2] · [Q4])."""
+        base_today = today or date.today()
+
+        def factory():
+            return build_daily_quiz(
+                vocab_items=self.vocab_store.list_items(),
+                feedback_records=self.store.list_records(),
+                today=base_today,
+            )
+
+        quiz, created = self.quiz_store.get_or_create(base_today, factory)
+        _, score = self.quiz_store.get_today_state(base_today)
+        if quiz is None:
+            return HTTPStatus.OK, {
+                "today": base_today.isoformat(),
+                "quiz": None,
+                "notEnough": True,
+                "message": NOT_ENOUGH_MESSAGE,
+                "score": None,
+            }
+        return HTTPStatus.OK, {
+            "today": base_today.isoformat(),
+            "quiz": quiz.to_dict(),
+            "created": created,
+            "score": score.to_dict() if score is not None else None,
+        }
+
+    def handle_post_quiz_attempt(self, raw_body: bytes) -> tuple[int, dict[str, object]]:
+        """답안을 채점하고 그 세트 날짜의 점수 줄을 고친다. 조건 밖이면 400 이고 저장하지 않는다([Q5] · [Q6])."""
+        payload, err = self._parse_json_body(raw_body)
+        if err is not None:
+            return err
+        try:
+            req = QuizAttemptRequest.from_dict(payload)
+            result, line = self.quiz_store.submit_attempt(req)
+        except QuizDateMismatch as exc:
+            return HTTPStatus.BAD_REQUEST, {"error": str(exc), "dateChanged": True}
+        except ValidationError as exc:
+            return HTTPStatus.BAD_REQUEST, {"error": str(exc)}
+        return HTTPStatus.OK, {**result, "scoreLine": line.to_dict()}
+
     def handle_static(self, url_path: str) -> tuple[int, str, bytes]:
         """정적 웹 화면 파일(index.html, app.js, styles.css)을 읽고 경로 탐색 공격을 차단한다."""
         rel_path = "index.html" if url_path in ("", "/") else url_path.lstrip("/")
@@ -327,6 +388,10 @@ def create_http_server(
                 )
                 self._send_json(status, data)
                 return
+            if parsed.path == "/api/quiz/today":
+                status, data = active_app.handle_get_quiz_today()
+                self._send_json(status, data)
+                return
             if parsed.path.startswith("/api/"):
                 self._send_json(
                     HTTPStatus.NOT_FOUND,
@@ -354,6 +419,14 @@ def create_http_server(
                 return
             if parsed.path == "/api/routine/goal":
                 status, data = active_app.handle_post_routine_goal(raw_body)
+                self._send_json(status, data)
+                return
+            if parsed.path == "/api/quiz/today":
+                status, data = active_app.handle_post_quiz_today()
+                self._send_json(status, data)
+                return
+            if parsed.path == "/api/quiz/attempt":
+                status, data = active_app.handle_post_quiz_attempt(raw_body)
                 self._send_json(status, data)
                 return
 

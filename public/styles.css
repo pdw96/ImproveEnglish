@@ -1545,6 +1545,178 @@ input[type="password"]:focus {
   }
 }
 
+/* 조각 8: 오늘의 퀴즈 카드 */
+.daily-quiz-notice {
+  margin: 0 0 0.85rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border-radius: 6px;
+  font-size: 0.88rem;
+}
+
+.daily-quiz-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.daily-quiz-progress .quiz-label {
+  margin: 0;
+}
+
+.daily-quiz-question {
+  margin: 0 0 0.9rem;
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--text);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.daily-quiz-choices {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.daily-quiz-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.daily-quiz-choice:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--accent-bg);
+}
+
+.daily-quiz-choice:disabled {
+  cursor: default;
+}
+
+.daily-quiz-choice-num {
+  flex: none;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.daily-quiz-choice.is-correct {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success-text);
+  font-weight: 600;
+}
+
+.daily-quiz-choice.is-wrong {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.daily-quiz-feedback {
+  margin: 0.8rem 0 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.daily-quiz-feedback.is-correct {
+  color: var(--success-text);
+}
+
+.daily-quiz-feedback.is-wrong {
+  color: var(--danger-text);
+}
+
+.daily-quiz-actions {
+  margin-top: 0.9rem;
+}
+
+.daily-quiz-score-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0 0 0.4rem;
+}
+
+.daily-quiz-score {
+  font-family: var(--font-serif);
+  font-size: 2.4rem;
+  line-height: 1;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.daily-quiz-score-unit {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.daily-quiz-score-detail {
+  font-size: 0.88rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.daily-quiz-all-right {
+  margin: 0 0 0.6rem;
+  color: var(--success-text);
+  font-weight: 600;
+}
+
+.daily-quiz-wrong-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.daily-quiz-wrong-item {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger-border);
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.daily-quiz-wrong-q {
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+  white-space: pre-line;
+}
+
+.daily-quiz-wrong-row {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+}
+
+.daily-quiz-wrong-row strong {
+  color: var(--text);
+}
+
+.daily-quiz-wrong-row.answer strong {
+  color: var(--success-text);
+}
+
 @media (forced-colors: active) {
   .card,
   .routine-banner,

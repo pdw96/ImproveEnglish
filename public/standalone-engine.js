@@ -19,6 +19,7 @@
     HISTORY: "ie_feedback_history_v1",
     VOCAB: "ie_vocab_items_v1",
     ROUTINE: "ie_routine_state_v1",
+    QUIZ: "ie_quiz_v1",
   };
 
   const SESSION_KEY = "ie_gemini_api_key_session";
@@ -836,6 +837,367 @@
     };
   }
 
+  // ── 조각 8(review-quiz): 오늘의 퀴즈 — 서버(src/quiz_*.py)와 같은 규약 ──────────────
+  // 퀴즈 기록은 루틴 상태와 다른 자리(ie_quiz_v1)에 둔다 — 연속 학습일 · 하루 목표 집계가 읽지 않는다.
+  const QUIZ_SIZE = 10;
+  const QUIZ_AI_MAX = 3;
+  const QUIZ_MIN_SIZE = 5;
+  const QUIZ_CHOICES = 4;
+  const QUIZ_BLANK = "____";
+  const QUIZ_KINDS = ["meaning", "expression", "blank", "ai"];
+  const QUIZ_MINE_KINDS = ["blank", "meaning", "expression"];
+  const QUIZ_LIMITS = {
+    question: 300,
+    choice: 200,
+    explanation: 500,
+    expression: 200,
+    meaning: 300,
+    example: 500,
+  };
+  const QUIZ_NOT_ENOUGH_MESSAGE =
+    "단어장 · 첨삭 기록에 표현이 5개 이상 쌓이면 퀴즈가 열립니다.";
+  const QUIZ_DATE_CHANGED_MESSAGE =
+    "날짜가 바뀌어 새 퀴즈가 열렸습니다. 이 답안은 점수에 남지 않습니다.";
+
+  function quizNormalize(str) {
+    return String(str || "")
+      .split(/\s+/)
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  }
+
+  function isPlainInt(v) {
+    return typeof v === "number" && Number.isInteger(v);
+  }
+
+  function isIsoDateStr(v) {
+    if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+    const parts = v.split("-").map((n) => parseInt(n, 10));
+    const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+    return dt.toISOString().slice(0, 10) === v;
+  }
+
+  function quizText(obj, key, maxLen, minLen) {
+    const min = minLen === undefined ? 1 : minLen;
+    const raw = obj[key] === undefined && min === 0 ? "" : obj[key];
+    if (typeof raw !== "string") return null;
+    const cleaned = raw.trim();
+    if (cleaned.length < min || cleaned.length > maxLen) return null;
+    return cleaned;
+  }
+
+  // 퀴즈 문제 하나를 검증해 정리한 사본을 돌려준다. 모양이 틀리면 null(설계 ③ · [Q3])
+  function validateQuizQuestion(q) {
+    if (!q || typeof q !== "object") return null;
+    if (typeof q.id !== "string" || !q.id.trim()) return null;
+    if (!QUIZ_KINDS.includes(q.kind)) return null;
+    if (q.source !== "mine" && q.source !== "ai") return null;
+    if ((q.kind === "ai") !== (q.source === "ai")) return null;
+    const question = quizText(q, "question", QUIZ_LIMITS.question);
+    if (question === null) return null;
+    if (!Array.isArray(q.choices) || q.choices.length !== QUIZ_CHOICES) return null;
+    const seen = new Set();
+    const choices = [];
+    for (const c of q.choices) {
+      if (typeof c !== "string") return null;
+      const cleaned = c.trim();
+      if (!cleaned || cleaned.length > QUIZ_LIMITS.choice) return null;
+      const key = quizNormalize(cleaned);
+      if (seen.has(key)) return null;
+      seen.add(key);
+      choices.push(cleaned);
+    }
+    if (!isPlainInt(q.answerIndex) || q.answerIndex < 0 || q.answerIndex >= QUIZ_CHOICES) {
+      return null;
+    }
+    const explanation = quizText(q, "explanation", QUIZ_LIMITS.explanation);
+    const expression = quizText(q, "expression", QUIZ_LIMITS.expression);
+    const meaning = quizText(q, "meaning", QUIZ_LIMITS.meaning);
+    const example = quizText(q, "example", QUIZ_LIMITS.example, 0);
+    if (explanation === null || expression === null || meaning === null || example === null) {
+      return null;
+    }
+    return {
+      id: q.id.trim(),
+      kind: q.kind,
+      source: q.source,
+      question,
+      choices,
+      answerIndex: q.answerIndex,
+      explanation,
+      expression,
+      meaning,
+      example,
+    };
+  }
+
+  function validateDailyQuiz(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    if (!isIsoDateStr(raw.date)) return null;
+    if (typeof raw.createdAt !== "string" || !raw.createdAt.trim()) return null;
+    if (
+      !Array.isArray(raw.questions) ||
+      raw.questions.length < QUIZ_MIN_SIZE ||
+      raw.questions.length > QUIZ_SIZE
+    ) {
+      return null;
+    }
+    const questions = [];
+    for (const q of raw.questions) {
+      const ok = validateQuizQuestion(q);
+      if (!ok) return null;
+      questions.push(ok);
+    }
+    return { date: raw.date, createdAt: raw.createdAt.trim(), questions };
+  }
+
+  function validateQuizScore(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    if (!isIsoDateStr(raw.date)) return null;
+    const { firstScore, bestScore, attemptCount, total } = raw;
+    for (const v of [firstScore, bestScore]) {
+      if (!isPlainInt(v) || v < 0 || v > 100) return null;
+    }
+    if (bestScore < firstScore) return null;
+    if (!isPlainInt(attemptCount) || attemptCount < 1) return null;
+    if (!isPlainInt(total) || total < QUIZ_MIN_SIZE || total > QUIZ_SIZE) return null;
+    return { date: raw.date, firstScore, bestScore, attemptCount, total };
+  }
+
+  function getQuizState() {
+    const raw = readJsonStorage(STORAGE_KEYS.QUIZ, null);
+    if (!raw || typeof raw !== "object") return { today: null, scores: [] };
+    const today = raw.today ? validateDailyQuiz(raw.today) : null;
+    const scores = [];
+    const seenDates = new Set();
+    (Array.isArray(raw.scores) ? raw.scores : []).forEach((s) => {
+      const ok = validateQuizScore(s);
+      if (ok && !seenDates.has(ok.date)) {
+        seenDates.add(ok.date);
+        scores.push(ok);
+      }
+    });
+    return { today, scores };
+  }
+
+  function saveQuizState(state) {
+    writeJsonStorage(STORAGE_KEYS.QUIZ, { today: state.today, scores: state.scores });
+  }
+
+  function quizShuffle(list) {
+    const arr = list.slice();
+    for (let i = arr.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function escapeRegExp(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  // 표현 모음 — 복습 예정 단어장 → 최근 첨삭 핵심 표현 → 나머지 단어장 순(설계 ③)
+  function buildExpressionPool(vocabItems, historyRecords, todayStr) {
+    const entries = new Map();
+    const add = (expression, meaning, example) => {
+      const expr = typeof expression === "string" ? expression.trim() : "";
+      const mean = typeof meaning === "string" ? meaning.trim() : "";
+      if (!expr || !mean) return null;
+      const key = quizNormalize(expr);
+      if (!entries.has(key)) {
+        entries.set(key, {
+          expression: expr,
+          meaning: mean,
+          example: typeof example === "string" ? example.trim() : "",
+          blankSources: [],
+        });
+      }
+      return key;
+    };
+    const isDue = (it) => (it.nextReviewDate || "") <= todayStr;
+    vocabItems.filter(isDue).forEach((it) => add(it.expression, it.meaning, it.example));
+    historyRecords.forEach((rec) => {
+      const fb = (rec && rec.feedback) || {};
+      const keyList = Array.isArray(fb.keyExpressions) ? fb.keyExpressions : [];
+      const corrected = typeof fb.corrected === "string" ? fb.corrected.trim() : "";
+      const explanation = typeof fb.explanation === "string" ? fb.explanation.trim() : "";
+      keyList.forEach((k) => {
+        if (!k || typeof k !== "object") return;
+        const key = add(k.expression, k.meaning, k.example);
+        if (key === null) return;
+        const exprLower = String(k.expression).trim().toLowerCase();
+        if (corrected && corrected.toLowerCase().includes(exprLower)) {
+          entries.get(key).blankSources.push([corrected, explanation]);
+        }
+      });
+    });
+    vocabItems
+      .filter((it) => !isDue(it))
+      .forEach((it) => add(it.expression, it.meaning, it.example));
+    return Array.from(entries.values());
+  }
+
+  function pickDistractors(correct, candidates) {
+    const seen = new Set([quizNormalize(correct)]);
+    const unique = [];
+    candidates.forEach((c) => {
+      const cleaned = String(c || "").trim();
+      const key = quizNormalize(cleaned);
+      if (!cleaned || cleaned.length > QUIZ_LIMITS.choice || seen.has(key)) return;
+      seen.add(key);
+      unique.push(cleaned);
+    });
+    if (unique.length < QUIZ_CHOICES - 1) return null;
+    return quizShuffle(unique).slice(0, QUIZ_CHOICES - 1);
+  }
+
+  function plainExplanation(entry) {
+    let text = `「${entry.expression}」 — ${entry.meaning}`;
+    if (entry.example) text += ` · 예문: ${entry.example}`;
+    return text.slice(0, QUIZ_LIMITS.explanation);
+  }
+
+  function makeQuizQuestion(entry, kind, pool) {
+    const others = pool.filter((e) => e !== entry);
+    let correct;
+    let question;
+    let candidates;
+    let explanation;
+    if (kind === "meaning") {
+      correct = entry.meaning;
+      question = `「${entry.expression}」의 뜻으로 알맞은 것은?`;
+      candidates = others.map((e) => e.meaning);
+      explanation = plainExplanation(entry);
+    } else if (kind === "expression") {
+      correct = entry.expression;
+      question = `「${entry.meaning}」에 알맞은 영어 표현은?`;
+      candidates = others.map((e) => e.expression);
+      explanation = plainExplanation(entry);
+    } else {
+      if (!entry.blankSources.length) return null;
+      const [corrected, recordExplanation] = entry.blankSources[0];
+      const blanked = corrected.replace(
+        new RegExp(escapeRegExp(entry.expression), "i"),
+        () => QUIZ_BLANK
+      );
+      if (!blanked.includes(QUIZ_BLANK)) return null;
+      correct = entry.expression;
+      question = `빈칸에 알맞은 표현은?\n${blanked}`;
+      candidates = others.map((e) => e.expression);
+      explanation = (recordExplanation || plainExplanation(entry)).slice(
+        0,
+        QUIZ_LIMITS.explanation
+      );
+    }
+    if (question.length > QUIZ_LIMITS.question || correct.length > QUIZ_LIMITS.choice) {
+      return null;
+    }
+    const distractors = pickDistractors(correct, candidates);
+    if (!distractors) return null;
+    const choices = quizShuffle([correct, ...distractors]);
+    return {
+      id: makeId("q"),
+      kind,
+      source: "mine",
+      question,
+      choices,
+      answerIndex: choices.indexOf(correct),
+      explanation,
+      expression: entry.expression.slice(0, QUIZ_LIMITS.expression),
+      meaning: entry.meaning.slice(0, QUIZ_LIMITS.meaning),
+      example: entry.example.slice(0, QUIZ_LIMITS.example),
+    };
+  }
+
+  function makeMineQuestions(pool, limit, excludeKeys) {
+    const questions = [];
+    if (pool.length < QUIZ_CHOICES) return questions;
+    for (let idx = 0; idx < pool.length; idx += 1) {
+      if (questions.length >= limit) break;
+      const entry = pool[idx];
+      if (excludeKeys.has(quizNormalize(entry.expression))) continue;
+      const start = idx % QUIZ_MINE_KINDS.length;
+      const kinds = QUIZ_MINE_KINDS.slice(start).concat(QUIZ_MINE_KINDS.slice(0, start));
+      for (const kind of kinds) {
+        const made = makeQuizQuestion(entry, kind, pool);
+        if (made) {
+          questions.push(made);
+          break;
+        }
+      }
+    }
+    return questions;
+  }
+
+  // 오늘의 세트 — 기본 배분 내 기록 7 · AI 3, AI 가 모자란 만큼 내 기록으로 최대 10문제([Q1] · [Q2])
+  function buildDailyQuiz(todayStr, aiQuestions) {
+    const ai = (aiQuestions || []).slice(0, QUIZ_AI_MAX);
+    const aiKeys = new Set(ai.map((q) => quizNormalize(q.expression)));
+    const pool = buildExpressionPool(getVocabItems(), getHistoryRecords(), todayStr);
+    const mine = makeMineQuestions(pool, QUIZ_SIZE - ai.length, aiKeys);
+    const questions = mine.concat(ai);
+    if (questions.length < QUIZ_MIN_SIZE) return null;
+    return {
+      date: todayStr,
+      createdAt: new Date().toISOString(),
+      questions: quizShuffle(questions),
+    };
+  }
+
+  function quizScoreOf(correctCount, total) {
+    if (total <= 0) return 0;
+    return Math.floor((correctCount * 200 + total) / (total * 2));
+  }
+
+  function gradeQuizAttempt(quiz, answers) {
+    let correctCount = 0;
+    const results = quiz.questions.map((q, idx) => {
+      const correct = answers[idx] === q.answerIndex;
+      if (correct) correctCount += 1;
+      return {
+        index: idx,
+        questionId: q.id,
+        chosenIndex: answers[idx],
+        answerIndex: q.answerIndex,
+        correct,
+        answer: q.choices[q.answerIndex],
+        explanation: q.explanation,
+      };
+    });
+    const total = quiz.questions.length;
+    return {
+      date: quiz.date,
+      score: quizScoreOf(correctCount, total),
+      correctCount,
+      total,
+      results,
+    };
+  }
+
+  function validateQuizAttempt(bodyObj) {
+    if (!bodyObj || typeof bodyObj !== "object" || Array.isArray(bodyObj)) {
+      return { error: "요청 본문은 JSON 객체여야 합니다." };
+    }
+    if (!isIsoDateStr(bodyObj.date)) {
+      return { error: "퀴즈 날짜(date)은 YYYY-MM-DD 형식이어야 합니다." };
+    }
+    const answers = bodyObj.answers;
+    if (!Array.isArray(answers) || answers.length === 0) {
+      return { error: "답안(answers)은 고른 번호의 목록이어야 합니다." };
+    }
+    if (answers.length > QUIZ_SIZE) {
+      return { error: "답안 개수가 문제 수와 맞지 않습니다." };
+    }
+    for (const v of answers) {
+      if (!isPlainInt(v) || v < 0 || v >= QUIZ_CHOICES) {
+        return { error: "고른 번호는 0 ~ 3 의 정수여야 합니다." };
+      }
+    }
+    return { date: bodyObj.date, answers: answers.slice() };
+  }
+
   function makeJsonResponse(status, payload) {
     return new Response(JSON.stringify(payload), {
       status,
@@ -1175,6 +1537,86 @@
         completedToday: todayFeedbackCount >= 1,
         todayFeedbackCount,
       });
+    }
+
+    // 10) GET /api/quiz/today — 오늘 세트(있으면)와 오늘 점수 줄. 세트를 만들지 않는다([Q4])
+    if (method === "GET" && path === "/api/quiz/today") {
+      const state = getQuizState();
+      const quiz = state.today && state.today.date === todayStr ? state.today : null;
+      const score = state.scores.find((s) => s.date === todayStr) || null;
+      return makeJsonResponse(200, { today: todayStr, quiz, score });
+    }
+
+    // 11) POST /api/quiz/today — [퀴즈 시작]: 없으면 만들어 저장, 있으면 같은 세트([Q1] · [Q2] · [Q4])
+    if (method === "POST" && path === "/api/quiz/today") {
+      const state = getQuizState();
+      const score = state.scores.find((s) => s.date === todayStr) || null;
+      if (state.today && state.today.date === todayStr) {
+        return makeJsonResponse(200, {
+          today: todayStr,
+          quiz: state.today,
+          created: false,
+          score,
+        });
+      }
+      const made = buildDailyQuiz(todayStr, []);
+      if (!made) {
+        return makeJsonResponse(200, {
+          today: todayStr,
+          quiz: null,
+          notEnough: true,
+          message: QUIZ_NOT_ENOUGH_MESSAGE,
+          score: null,
+        });
+      }
+      saveQuizState({ today: made, scores: state.scores });
+      return makeJsonResponse(200, { today: todayStr, quiz: made, created: true, score });
+    }
+
+    // 12) POST /api/quiz/attempt — 채점 · 점수 줄 고침. 조건 밖이면 400 이고 저장하지 않는다([Q5] · [Q6])
+    if (method === "POST" && path === "/api/quiz/attempt") {
+      const req = validateQuizAttempt(bodyObj);
+      if (req.error) {
+        return makeJsonResponse(400, { error: req.error });
+      }
+      const state = getQuizState();
+      if (!state.today || state.today.date !== req.date) {
+        return makeJsonResponse(400, {
+          error: QUIZ_DATE_CHANGED_MESSAGE,
+          dateChanged: true,
+        });
+      }
+      if (req.answers.length !== state.today.questions.length) {
+        return makeJsonResponse(400, { error: "답안 개수가 문제 수와 맞지 않습니다." });
+      }
+      const result = gradeQuizAttempt(state.today, req.answers);
+      let line = null;
+      const scores = state.scores.map((s) => {
+        if (s.date === state.today.date && !line) {
+          line = {
+            date: s.date,
+            firstScore: s.firstScore,
+            bestScore: Math.max(s.bestScore, result.score),
+            attemptCount: s.attemptCount + 1,
+            total: s.total,
+          };
+          return line;
+        }
+        return s;
+      });
+      if (!line) {
+        line = {
+          date: state.today.date,
+          firstScore: result.score,
+          bestScore: result.score,
+          attemptCount: 1,
+          total: state.today.questions.length,
+        };
+        scores.push(line);
+      }
+      scores.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+      saveQuizState({ today: state.today, scores });
+      return makeJsonResponse(200, { ...result, scoreLine: line });
     }
 
     return makeJsonResponse(404, {

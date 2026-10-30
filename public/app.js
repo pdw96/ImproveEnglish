@@ -1612,6 +1612,8 @@
     await fetchHistory();
     await fetchRoutine();
     await fetchMission();
+    resetDailyQuiz();
+    await fetchDailyQuiz();
     renderStandaloneSettings();
   }
 
@@ -1889,10 +1891,256 @@
     });
   });
 
+  // ── 조각 8: 오늘의 퀴즈 — 하루 한 세트, 한 문제씩 풀고 결과 · 해설을 본다 ──────────────
+  const dailyQuizStatus = document.getElementById("daily-quiz-status");
+  const dailyQuizStart = document.getElementById("daily-quiz-start");
+  const dailyQuizNotice = document.getElementById("daily-quiz-notice");
+  const dailyQuizStartBtn = document.getElementById("daily-quiz-start-btn");
+  const dailyQuizPlay = document.getElementById("daily-quiz-play");
+  const dailyQuizCounter = document.getElementById("daily-quiz-counter");
+  const dailyQuizKind = document.getElementById("daily-quiz-kind");
+  const dailyQuizQuestion = document.getElementById("daily-quiz-question");
+  const dailyQuizChoices = document.getElementById("daily-quiz-choices");
+  const dailyQuizFeedback = document.getElementById("daily-quiz-feedback");
+  const dailyQuizNextBtn = document.getElementById("daily-quiz-next-btn");
+  const dailyQuizResult = document.getElementById("daily-quiz-result");
+  const dailyQuizScore = document.getElementById("daily-quiz-score");
+  const dailyQuizScoreDetail = document.getElementById("daily-quiz-score-detail");
+  const dailyQuizFirstNote = document.getElementById("daily-quiz-first-note");
+  const dailyQuizAllRight = document.getElementById("daily-quiz-all-right");
+  const dailyQuizWrongList = document.getElementById("daily-quiz-wrong-list");
+  const dailyQuizRetryBtn = document.getElementById("daily-quiz-retry-btn");
+
+  const DAILY_QUIZ_KIND_LABELS = {
+    meaning: "뜻 고르기",
+    expression: "표현 고르기",
+    blank: "빈칸 채우기",
+    ai: "AI 새 문제",
+  };
+  const dailyQuiz = { quiz: null, index: 0, answers: [], busy: false };
+
+  function showDailyQuizView(view) {
+    if (!dailyQuizStart) return;
+    dailyQuizStart.hidden = view !== "start";
+    dailyQuizPlay.hidden = view !== "play";
+    dailyQuizResult.hidden = view !== "result";
+  }
+
+  // 모드를 바꾸거나 백업을 불러오면 풀던 세트를 버리고 시작 화면으로 돌린다
+  function resetDailyQuiz() {
+    dailyQuiz.quiz = null;
+    dailyQuiz.index = 0;
+    dailyQuiz.answers = [];
+    showDailyQuizNotice("");
+    showDailyQuizView("start");
+  }
+
+  function showDailyQuizNotice(text) {
+    if (!dailyQuizNotice) return;
+    dailyQuizNotice.textContent = text || "";
+    dailyQuizNotice.hidden = !text;
+  }
+
+  // 오늘 점수 줄로 머리의 배지와 시작 버튼 글을 맞춘다
+  function renderDailyQuizStatus(score) {
+    if (!dailyQuizStatus) return;
+    if (score) {
+      dailyQuizStatus.textContent =
+        score.attemptCount > 1
+          ? `오늘 ${score.firstScore}점 · 최고 ${score.bestScore}점`
+          : `오늘 ${score.firstScore}점`;
+      dailyQuizStatus.classList.add("studied");
+      dailyQuizStartBtn.textContent = "다시 풀기";
+    } else {
+      dailyQuizStatus.textContent = "오늘 아직 안 풀었어요";
+      dailyQuizStatus.classList.remove("studied");
+      dailyQuizStartBtn.textContent = "퀴즈 시작";
+    }
+  }
+
+  async function fetchDailyQuiz() {
+    if (!dailyQuizStatus) return;
+    try {
+      const res = await fetch("/api/quiz/today");
+      if (!res.ok) return;
+      const data = await res.json();
+      renderDailyQuizStatus(data.score || null);
+    } catch (_) {
+      // 초기 로드 실패 시 무시
+    }
+  }
+
+  function renderDailyQuizQuestion() {
+    const quiz = dailyQuiz.quiz;
+    const q = quiz.questions[dailyQuiz.index];
+    dailyQuizCounter.textContent = `${dailyQuiz.index + 1} / ${quiz.questions.length}`;
+    dailyQuizKind.textContent = DAILY_QUIZ_KIND_LABELS[q.kind] || "";
+    dailyQuizQuestion.textContent = q.question;
+    dailyQuizFeedback.hidden = true;
+    dailyQuizFeedback.className = "daily-quiz-feedback";
+    dailyQuizNextBtn.hidden = true;
+    dailyQuizNextBtn.textContent =
+      dailyQuiz.index === quiz.questions.length - 1 ? "결과 보기" : "다음 문제";
+    dailyQuizChoices.replaceChildren();
+    q.choices.forEach((choice, idx) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "daily-quiz-choice";
+      btn.dataset.index = String(idx);
+      const num = document.createElement("span");
+      num.className = "daily-quiz-choice-num";
+      num.textContent = `${idx + 1}`;
+      const label = document.createElement("span");
+      label.className = "daily-quiz-choice-text";
+      label.textContent = choice;
+      btn.append(num, label);
+      btn.addEventListener("click", () => chooseDailyQuizAnswer(idx));
+      dailyQuizChoices.appendChild(btn);
+    });
+  }
+
+  function chooseDailyQuizAnswer(chosen) {
+    const q = dailyQuiz.quiz.questions[dailyQuiz.index];
+    if (dailyQuiz.answers.length > dailyQuiz.index) return;
+    dailyQuiz.answers.push(chosen);
+    const correct = chosen === q.answerIndex;
+    dailyQuizChoices.querySelectorAll(".daily-quiz-choice").forEach((btn) => {
+      const idx = Number(btn.dataset.index);
+      btn.disabled = true;
+      if (idx === q.answerIndex) {
+        btn.classList.add("is-correct");
+        btn.querySelector(".daily-quiz-choice-text").textContent += "  ✓ 정답";
+      } else if (idx === chosen) {
+        btn.classList.add("is-wrong");
+        btn.querySelector(".daily-quiz-choice-text").textContent += "  ✗ 내 답";
+      }
+    });
+    dailyQuizFeedback.textContent = correct
+      ? "맞았습니다!"
+      : `틀렸습니다 — 정답: ${q.choices[q.answerIndex]}`;
+    dailyQuizFeedback.className = `daily-quiz-feedback ${correct ? "is-correct" : "is-wrong"}`;
+    dailyQuizFeedback.hidden = false;
+    dailyQuizNextBtn.hidden = false;
+    dailyQuizNextBtn.focus();
+  }
+
+  function renderDailyQuizResult(result) {
+    const line = result.scoreLine;
+    dailyQuizScore.textContent = String(result.score);
+    dailyQuizScoreDetail.textContent = `(${result.total}문제 중 ${result.correctCount}개 맞힘)`;
+    dailyQuizFirstNote.textContent =
+      line && line.attemptCount > 1
+        ? `오늘 첫 점수 ${line.firstScore}점 · 최고 ${line.bestScore}점 — 오늘의 대표 점수는 첫 점수입니다.`
+        : "오늘의 점수로 기록했습니다. 다시 풀어도 대표 점수는 이 첫 점수입니다.";
+    const wrong = result.results.filter((r) => !r.correct);
+    dailyQuizAllRight.hidden = wrong.length > 0;
+    dailyQuizWrongList.replaceChildren();
+    wrong.forEach((r) => {
+      const q = dailyQuiz.quiz.questions[r.index];
+      const li = document.createElement("li");
+      li.className = "daily-quiz-wrong-item";
+      const qText = document.createElement("p");
+      qText.className = "daily-quiz-wrong-q";
+      qText.textContent = `${r.index + 1}. ${q.question}`;
+      const mine = document.createElement("p");
+      mine.className = "daily-quiz-wrong-row";
+      mine.append("내 답: ");
+      const mineStrong = document.createElement("strong");
+      mineStrong.textContent = q.choices[r.chosenIndex];
+      mine.appendChild(mineStrong);
+      const ans = document.createElement("p");
+      ans.className = "daily-quiz-wrong-row answer";
+      ans.append("정답: ");
+      const ansStrong = document.createElement("strong");
+      ansStrong.textContent = r.answer;
+      ans.appendChild(ansStrong);
+      const exp = document.createElement("p");
+      exp.className = "daily-quiz-wrong-row";
+      exp.textContent = `해설: ${r.explanation}`;
+      li.append(qText, mine, ans, exp);
+      dailyQuizWrongList.appendChild(li);
+    });
+    renderDailyQuizStatus(line || null);
+    showDailyQuizView("result");
+  }
+
+  async function submitDailyQuiz() {
+    dailyQuiz.busy = true;
+    dailyQuizNextBtn.disabled = true;
+    try {
+      const res = await fetch("/api/quiz/attempt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: dailyQuiz.quiz.date, answers: dailyQuiz.answers }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        dailyQuiz.quiz = null;
+        showDailyQuizNotice(data.error || "답안을 기록하지 못했습니다. 다시 시도해 주세요.");
+        showDailyQuizView("start");
+        await fetchDailyQuiz();
+        return;
+      }
+      renderDailyQuizResult(data);
+    } catch (_) {
+      showDailyQuizNotice("답안을 기록하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      showDailyQuizView("start");
+    } finally {
+      dailyQuiz.busy = false;
+      dailyQuizNextBtn.disabled = false;
+    }
+  }
+
+  async function startDailyQuiz() {
+    if (dailyQuiz.busy) return;
+    dailyQuiz.busy = true;
+    dailyQuizStartBtn.disabled = true;
+    dailyQuizRetryBtn.disabled = true;
+    showDailyQuizNotice("");
+    try {
+      const res = await fetch("/api/quiz/today", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || !data.quiz) {
+        showDailyQuizNotice(data.message || data.error || "퀴즈를 열지 못했습니다.");
+        showDailyQuizView("start");
+        return;
+      }
+      dailyQuiz.quiz = data.quiz;
+      dailyQuiz.index = 0;
+      dailyQuiz.answers = [];
+      renderDailyQuizStatus(data.score || null);
+      renderDailyQuizQuestion();
+      showDailyQuizView("play");
+    } catch (_) {
+      showDailyQuizNotice("퀴즈를 열지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      showDailyQuizView("start");
+    } finally {
+      dailyQuiz.busy = false;
+      dailyQuizStartBtn.disabled = false;
+      dailyQuizRetryBtn.disabled = false;
+    }
+  }
+
+  if (dailyQuizStartBtn) {
+    dailyQuizStartBtn.addEventListener("click", startDailyQuiz);
+    dailyQuizRetryBtn.addEventListener("click", startDailyQuiz);
+    dailyQuizNextBtn.addEventListener("click", () => {
+      if (dailyQuiz.busy || !dailyQuiz.quiz) return;
+      if (dailyQuiz.index < dailyQuiz.quiz.questions.length - 1) {
+        dailyQuiz.index += 1;
+        renderDailyQuizQuestion();
+        dailyQuizQuestion.scrollIntoView({ block: "nearest" });
+      } else {
+        submitDailyQuiz();
+      }
+    });
+  }
+
   setupSpeechRecognition();
   setupMobileSettingsAndPwa();
   fetchVocab();
   fetchHistory();
   fetchRoutine();
   fetchMission();
+  fetchDailyQuiz();
 })();
