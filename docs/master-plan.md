@@ -28,6 +28,7 @@
 | 6 | api-key-vault | 스마트폰에 보관한 Gemini API 키를 내 비밀번호로 암호화해 잠가 두고, 쓸 때만 풀어 쓴다 | standalone-mobile-app | 닫힘 | `docs/slices/6-api-key-vault/` |
 | 7 | speaking-practice | 길게 이어 말한 영어를 실시간 글자로 보며 입력하고, 첨삭받은 문장 · 표현을 원어민 발음으로 들어 본다 | ai-feedback | 닫힘 | `docs/slices/7-speaking-practice/` |
 | 8 | review-quiz | 하루 한 번 내 단어장 · 첨삭 기록과 AI 새 문제를 섞은 4지선다 퀴즈를 풀고 점수를 남긴다 | ai-feedback · vocab-review | 진행 | `docs/slices/8-review-quiz/` |
+| 9 | ai-provider-choice | 첨삭 · 퀴즈에 쓸 AI 를 Gemini · ChatGPT · Claude 가운데 고르고, 각자 자기 API 키를 넣어 쓴다 | ai-feedback · review-quiz | 예정 | — |
 | — | level-tutor | 공인어학 점수 · 목표를 직접 입력하면 퀴즈 · 미션 · 첨삭을 내 수준에 맞춘다 | review-quiz | 예정 | — |
 
 ## 범위 변경
