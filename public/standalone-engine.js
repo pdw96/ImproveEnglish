@@ -1010,18 +1010,32 @@
   }
 
   // 표현 모음 — 복습 예정 단어장 → 최근 첨삭 핵심 표현 → 나머지 단어장 순(설계 ③)
+  // 순서와 출처 우선은 따로다: 대상 표현이 같으면 표현 · 뜻 · 예문은 늘 단어장 것을 쓴다
   function buildExpressionPool(vocabItems, historyRecords, todayStr) {
     const entries = new Map();
+    const vocabByKey = new Map();
+    vocabItems.forEach((it) => {
+      const e = typeof it.expression === "string" ? it.expression.trim() : "";
+      const m = typeof it.meaning === "string" ? it.meaning.trim() : "";
+      if (e && m && !vocabByKey.has(quizNormalize(e))) vocabByKey.set(quizNormalize(e), it);
+    });
     const add = (expression, meaning, example) => {
-      const expr = typeof expression === "string" ? expression.trim() : "";
-      const mean = typeof meaning === "string" ? meaning.trim() : "";
+      let expr = typeof expression === "string" ? expression.trim() : "";
+      let mean = typeof meaning === "string" ? meaning.trim() : "";
       if (!expr || !mean) return null;
       const key = quizNormalize(expr);
       if (!entries.has(key)) {
+        let ex = example;
+        const saved = vocabByKey.get(key);
+        if (saved) {
+          expr = saved.expression.trim();
+          mean = saved.meaning.trim();
+          ex = saved.example;
+        }
         entries.set(key, {
           expression: expr,
           meaning: mean,
-          example: typeof example === "string" ? example.trim() : "",
+          example: typeof ex === "string" ? ex.trim() : "",
           blankSources: [],
         });
       }

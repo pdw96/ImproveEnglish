@@ -42,10 +42,17 @@ def build_expression_pool(
     feedback_records: list[FeedbackRecord],
     today: date | None = None,
 ) -> list[PoolEntry]:
-    """단어장과 첨삭 핵심 표현을 합친 표현 모음 — 복습 예정 단어장 → 최근 첨삭 핵심 표현 → 나머지 단어장 순."""
+    """단어장과 첨삭 핵심 표현을 합친 표현 모음 — 복습 예정 단어장 → 최근 첨삭 핵심 표현 → 나머지 단어장 순.
+
+    순서와 출처 우선은 따로다: 대상 표현이 같으면 자리는 먼저 온 쪽이어도 표현 · 뜻 · 예문은 늘 단어장 것을 쓴다(설계 ③).
+    """
     base_today = today or date.today()
     entries: dict[str, PoolEntry] = {}
     order: list[str] = []
+    vocab_by_key: dict[str, VocabItem] = {}
+    for item in vocab_items:
+        if item.expression.strip() and item.meaning.strip():
+            vocab_by_key.setdefault(normalize_text(item.expression), item)
 
     def add(expression: str, meaning: str, example: str) -> str | None:
         expr = expression.strip()
@@ -54,6 +61,9 @@ def build_expression_pool(
             return None
         key = normalize_text(expr)
         if key not in entries:
+            saved = vocab_by_key.get(key)
+            if saved is not None:
+                expr, mean, example = saved.expression.strip(), saved.meaning.strip(), saved.example
             entries[key] = PoolEntry(expr, mean, example.strip())
             order.append(key)
         return key

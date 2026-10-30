@@ -197,6 +197,24 @@ class TestQuizServer(unittest.TestCase):
             ["figure out", "looking forward to", "give up", "look forward to", "run into"],
         )
 
+    def test_q1_same_expression_uses_vocab_data_even_when_not_due(self) -> None:
+        """③ 대상 표현이 같으면 단어장 쪽 하나만 — 복습 예정이 아니어서 자리가 첨삭 쪽이어도 표현 · 뜻 · 예문은 단어장 것."""
+        items = vocab_dicts(3, "2026-12-01") + [
+            {**vocab_dicts(1)[0], "id": "dup", "expression": "Looking forward to", "meaning": "단어장에 적은 뜻",
+             "example": "단어장 예문", "nextReviewDate": "2026-12-01"}
+        ]
+        self.vocab_path.write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
+        self.history_path.write_text(json.dumps(HISTORY, ensure_ascii=False), encoding="utf-8")
+        pool = build_expression_pool(
+            self.app.vocab_store.list_items(), self.app.store.list_records(), today=DAY1
+        )
+        self.assertEqual(
+            [(e.expression, e.meaning, e.example) for e in pool][0],
+            ("Looking forward to", "단어장에 적은 뜻", "단어장 예문"),
+        )
+        self.assertEqual(len(pool), 4)
+        self.assertEqual(len(pool[0].blank_sources), 1)
+
     # [Q2]
     def test_q2_four_expressions_do_not_open_and_save_nothing(self) -> None:
         """[Q2] 5문제를 못 만들면(표현 4개 · AI 없음) 세트를 저장하지 않고 안내를 돌려준다."""
@@ -449,6 +467,13 @@ class TestQuizEngine(unittest.TestCase):
         targets = [normalize_text(q["expression"]) for q in quiz["questions"]]
         self.assertEqual(len(targets), len(set(targets)))
         self.assertEqual(self.out["full"]["geminiCalls"], 0)
+
+    def test_q1_same_expression_uses_vocab_data_even_when_not_due(self) -> None:
+        """③ 대상 표현이 같으면 뜻 · 예문은 단어장 것(복습 예정이 아니어도)."""
+        qs = [q for q in self.out["vocabWins"]["body"]["quiz"]["questions"]
+              if normalize_text(q["expression"]) == "looking forward to"]
+        self.assertEqual(len(qs), 1)
+        self.assertEqual((qs[0]["meaning"], qs[0]["example"]), ("단어장에 적은 뜻", "단어장 예문"))
 
     def test_q2_four_expressions_do_not_open_and_save_nothing(self) -> None:
         """[Q2] 표현 4개면 열지 않고 안내만, 기기 저장소는 그대로."""

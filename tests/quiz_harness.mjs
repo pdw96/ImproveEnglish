@@ -203,6 +203,17 @@ const out = {};
   out.blank = await call(w, "POST", "/api/quiz/today");
 }
 
+// 같은 표현이 첨삭 기록과 (복습 예정이 아닌) 단어장에 다 있으면 자리는 첨삭 쪽이어도 뜻 · 예문은 단어장 것(설계 ③)
+{
+  const clock = makeClock("2026-10-30T09:00:00");
+  const local = device(10, true, "2026-12-01");
+  const items = JSON.parse(local.ie_vocab_items_v1);
+  items.push({ ...items[0], id: "v-dup", expression: "Looking forward to", meaning: "단어장에 적은 뜻", example: "단어장 예문" });
+  local.ie_vocab_items_v1 = JSON.stringify(items);
+  const w = openWindow(local, clock);
+  out.vocabWins = await call(w, "POST", "/api/quiz/today");
+}
+
 // 날짜 넘김 ① — 세트 A 를 만든 뒤 날짜를 넘겨 A 의 답안을 내면 A 의 날짜로 남는다
 {
   const clock = makeClock("2026-10-30T23:55:00");
