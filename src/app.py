@@ -23,7 +23,8 @@ from src.feedback_types import (
 from src.gemini import GeminiServiceError, generate_feedback, load_dotenv_file
 from src.history_store import HistoryStore
 from src.mission_service import build_daily_mission_status
-from src.quiz_service import build_daily_quiz
+from src.quiz_ai import AiQuestionsResult, generate_ai_questions
+from src.quiz_service import build_daily_quiz, build_expression_pool
 from src.quiz_store import QuizDateMismatch, QuizStore
 from src.quiz_types import NOT_ENOUGH_MESSAGE, SAVE_FAILED_MESSAGE, QuizAttemptRequest
 from src.routine_store import RoutineStore
@@ -46,11 +47,14 @@ class FeedbackApp:
         vocab_store: VocabStore | None = None,
         routine_store: RoutineStore | None = None,
         quiz_store: QuizStore | None = None,
+        quiz_ai_fn: Callable[[list, list], AiQuestionsResult] | None = None,
     ) -> None:
         self.store = store or HistoryStore()
         self.vocab_store = vocab_store or VocabStore()
         self.routine_store = routine_store or RoutineStore()
         self.quiz_store = quiz_store or QuizStore()
+        # AI 새 문제 요청은 이 한 자리에서만 부른다(설계 ④ — 다음 조각 ai-provider-choice 가 갈아 끼울 자리)
+        self._quiz_ai_fn = quiz_ai_fn or generate_ai_questions
         self._custom_ai_fn = ai_fn
         self.public_dir = public_dir or PUBLIC_DIR
 
@@ -278,14 +282,31 @@ class FeedbackApp:
     def handle_post_quiz_today(
         self, today: date | None = None
     ) -> tuple[int, dict[str, object]]:
-        """[퀴즈 시작] — 오늘 세트가 없으면 만들어 저장하고, 있으면 같은 세트를 돌려준다([Q1] · [Q2] · [Q4])."""
+        """[퀴즈 시작] — 오늘 세트가 없으면 만들어 저장하고, 있으면 같은 세트를 돌려준다([Q1] · [Q2] · [Q4] · [Q9]).
+
+        AI 는 오늘 세트가 없을 때만, 세트를 만들기 전에 한 번 부른다 — 같은 날 다시 불러도 · [다시 풀기] 도 부르지 않는다.
+        """
         base_today = today or date.today()
+        existing, existing_score = self.quiz_store.get_today_state(base_today)
+        if existing is not None:
+            return HTTPStatus.OK, {
+                "today": base_today.isoformat(),
+                "quiz": existing.to_dict(),
+                "created": False,
+                "score": existing_score.to_dict() if existing_score is not None else None,
+            }
+
+        vocab_items = self.vocab_store.list_items()
+        records = self.store.list_records()
+        pool = build_expression_pool(vocab_items, records, today=base_today)
+        ai_result = self._quiz_ai_fn(pool, records)
 
         def factory():
             return build_daily_quiz(
-                vocab_items=self.vocab_store.list_items(),
-                feedback_records=self.store.list_records(),
+                vocab_items=vocab_items,
+                feedback_records=records,
                 today=base_today,
+                ai_questions=ai_result.questions,
             )
 
         try:
@@ -301,12 +322,18 @@ class FeedbackApp:
                 "message": NOT_ENOUGH_MESSAGE,
                 "score": None,
             }
-        return HTTPStatus.OK, {
+        body: dict[str, object] = {
             "today": base_today.isoformat(),
             "quiz": quiz.to_dict(),
             "created": created,
             "score": score.to_dict() if score is not None else None,
         }
+        if created:
+            body["aiCount"] = sum(1 for q in quiz.questions if q.source == "ai")
+            notice = ai_result.notice()
+            if notice:
+                body["aiNotice"] = notice
+        return HTTPStatus.OK, body
 
     def handle_post_quiz_attempt(self, raw_body: bytes) -> tuple[int, dict[str, object]]:
         """답안을 채점하고 그 세트 날짜의 점수 줄을 고친다. 조건 밖이면 400 이고 저장하지 않는다([Q5] · [Q6])."""

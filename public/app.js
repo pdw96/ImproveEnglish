@@ -1910,6 +1910,9 @@
   const dailyQuizAllRight = document.getElementById("daily-quiz-all-right");
   const dailyQuizWrongList = document.getElementById("daily-quiz-wrong-list");
   const dailyQuizRetryBtn = document.getElementById("daily-quiz-retry-btn");
+  const dailyQuizAiNotice = document.getElementById("daily-quiz-ai-notice");
+  const dailyQuizAiWords = document.getElementById("daily-quiz-ai-words");
+  const dailyQuizAiWordList = document.getElementById("daily-quiz-ai-word-list");
 
   const DAILY_QUIZ_KIND_LABELS = {
     meaning: "뜻 고르기",
@@ -2063,8 +2066,63 @@
       li.append(qText, mine, ans, exp);
       dailyQuizWrongList.appendChild(li);
     });
+    renderDailyQuizAiWords();
     renderDailyQuizStatus(line || null);
     showDailyQuizView("result");
+  }
+
+  // [Q7] AI 새 문제마다(맞힌 것 · 틀린 것 모두) 대상 표현 · 뜻과 [단어장에 담기]. 담은 결과는 버튼 곁에 보인다
+  function renderDailyQuizAiWords() {
+    const aiQuestions = dailyQuiz.quiz.questions.filter((q) => q.source === "ai");
+    dailyQuizAiWordList.replaceChildren();
+    dailyQuizAiWords.hidden = aiQuestions.length === 0;
+    aiQuestions.forEach((q) => {
+      const li = document.createElement("li");
+      li.className = "daily-quiz-ai-word";
+      const text = document.createElement("span");
+      text.className = "daily-quiz-ai-word-text";
+      const strong = document.createElement("strong");
+      strong.textContent = q.expression;
+      const meaning = document.createElement("span");
+      meaning.className = "daily-quiz-ai-word-meaning";
+      meaning.textContent = ` — ${q.meaning}`;
+      text.append(strong, meaning);
+      const saveWrap = document.createElement("span");
+      saveWrap.className = "daily-quiz-ai-word-save";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn-save-vocab daily-quiz-save-btn";
+      btn.textContent = "+ 단어장에 담기";
+      const status = document.createElement("span");
+      status.className = "daily-quiz-ai-word-status";
+      status.setAttribute("role", "status");
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+          const res = await fetch("/api/vocab", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ expression: q.expression, meaning: q.meaning, example: q.example || "" }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            status.textContent = data.error || "단어장에 담지 못했습니다.";
+            btn.disabled = false;
+            return;
+          }
+          status.textContent = data.duplicated ? "이미 단어장에 있습니다" : "단어장에 담았습니다";
+          btn.textContent = "단어장에 보관됨";
+          btn.classList.add("saved");
+          await fetchVocab();
+        } catch (_) {
+          status.textContent = "단어장에 담지 못했습니다.";
+          btn.disabled = false;
+        }
+      });
+      saveWrap.append(btn, status);
+      li.append(text, saveWrap);
+      dailyQuizAiWordList.appendChild(li);
+    });
   }
 
   async function submitDailyQuiz() {
@@ -2120,6 +2178,8 @@
       dailyQuiz.quiz = data.quiz;
       dailyQuiz.index = 0;
       dailyQuiz.answers = [];
+      dailyQuizAiNotice.textContent = data.aiNotice || "";
+      dailyQuizAiNotice.hidden = !data.aiNotice;
       renderDailyQuizStatus(data.score || null);
       renderDailyQuizQuestion();
       showDailyQuizView("play");

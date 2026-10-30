@@ -1234,6 +1234,152 @@
     return { date: bodyObj.date, quizId: bodyObj.quizId.trim(), answers: answers.slice() };
   }
 
+  // ── 조각 8 PR 2: AI 새 문제 — 퀴즈 전용 지시문 · 스키마(첨삭 지시문 · 스키마와 다른 상수) ─────────
+  // AI 새 문제 요청은 callQuizAi 한 자리에서만 부른다(설계 ④ — 다음 조각 ai-provider-choice 가 갈아 끼울 자리)
+  const QUIZ_AI_POOL_LIMIT = 10;
+  const QUIZ_AI_RECENT_LIMIT = 3;
+  const QUIZ_AI_NOTICE_NO_KEY =
+    "AI 키가 없거나 잠겨 있어 AI 새 문제 없이 내 기록으로만 냈습니다.";
+  const QUIZ_AI_NOTICE_FAILED = "AI 새 문제를 만들지 못해 내 기록으로만 냈습니다.";
+  const QUIZ_SYSTEM_INSTRUCTION =
+    "당신은 한국인 영어 학습자를 위한 퀴즈 출제자입니다. " +
+    "사용자가 이미 배운 영어 표현 목록과 최근 교정받은 문장을 받습니다. " +
+    "반드시 지정된 JSON 스키마에 맞춰 4지선다 빈칸 문제 3개를 만드세요.\n" +
+    "1. 각 문제는 목록의 서로 다른 표현 하나를 대상으로 합니다. 사용자가 본 적 없는 새 영어 문장 하나를 쓰고, " +
+    "대상 표현이 들어갈 자리를 ____ (밑줄 4개)로 비워 question 에 넣습니다.\n" +
+    "2. 문장 수준(단어 난이도 · 길이)은 사용자의 교정 문장과 비슷하게 맞추고, 20단어를 넘기지 않습니다.\n" +
+    "3. choices 는 영어 표현 4개입니다. 정답은 대상 표현 그대로 쓰고, 오답 3개는 비슷한 길이 · 같은 품사로 " +
+    "그럴듯하지만 그 문장에는 맞지 않는 표현입니다. 네 보기는 서로 달라야 합니다.\n" +
+    "4. answerIndex 는 정답 보기의 번호(0~3)입니다.\n" +
+    "5. explanation 은 왜 정답인지, 오답이 왜 어색한지 한국어로 2문장 이내로 씁니다.\n" +
+    "6. expression 은 대상 표현, meaning 은 그 한국어 뜻, example 은 빈칸을 정답으로 채운 완성 문장입니다.";
+  const QUIZ_RESPONSE_SCHEMA = {
+    type: "OBJECT",
+    required: ["questions"],
+    properties: {
+      questions: {
+        type: "ARRAY",
+        maxItems: QUIZ_AI_MAX,
+        items: {
+          type: "OBJECT",
+          required: ["question", "choices", "answerIndex", "explanation", "expression", "meaning", "example"],
+          properties: {
+            question: { type: "STRING", description: "대상 표현 자리를 ____ 로 비운 새 영어 문장" },
+            choices: {
+              type: "ARRAY",
+              minItems: QUIZ_CHOICES,
+              maxItems: QUIZ_CHOICES,
+              items: { type: "STRING" },
+              description: "영어 표현 보기 4개(정답 1 · 오답 3)",
+            },
+            answerIndex: { type: "INTEGER", description: "정답 보기 번호(0~3)" },
+            explanation: { type: "STRING", description: "정답 · 오답 이유를 설명하는 한국어 해설" },
+            expression: { type: "STRING", description: "대상 영어 표현" },
+            meaning: { type: "STRING", description: "대상 표현의 한국어 뜻" },
+            example: { type: "STRING", description: "빈칸을 정답으로 채운 완성 문장" },
+          },
+        },
+      },
+    },
+  };
+
+  function quizAiNotice(result) {
+    const count = result.questions.length;
+    if (count >= QUIZ_AI_MAX) return null;
+    if (count === 0) {
+      return result.status === "no_key" ? QUIZ_AI_NOTICE_NO_KEY : QUIZ_AI_NOTICE_FAILED;
+    }
+    return `AI 새 문제를 ${count}개만 만들어 나머지는 내 기록으로 채웠습니다.`;
+  }
+
+  // Gemini 응답에서 문제를 꺼내 ③ 의 모양으로 검증 — 틀린 문제는 그 문제만 버리고 앞의 3개만 쓴다
+  function parseAiQuestions(rawJson) {
+    let data;
+    try {
+      data = JSON.parse(rawJson.candidates[0].content.parts[0].text);
+    } catch (_) {
+      return [];
+    }
+    const items = data && Array.isArray(data.questions) ? data.questions : null;
+    if (!items) return [];
+    const out = [];
+    const seenTargets = new Set();
+    for (const item of items) {
+      if (out.length >= QUIZ_AI_MAX) break;
+      if (!item || typeof item !== "object") continue;
+      const checked = validateQuizQuestion({
+        id: makeId("qa"),
+        kind: "ai",
+        source: "ai",
+        question: item.question,
+        choices: item.choices,
+        answerIndex: item.answerIndex,
+        explanation: item.explanation,
+        expression: item.expression,
+        meaning: item.meaning,
+        example: item.example,
+      });
+      if (!checked) continue;
+      const target = quizNormalize(checked.expression);
+      if (!checked.question.includes(QUIZ_BLANK)) continue;
+      if (quizNormalize(checked.choices[checked.answerIndex]) !== target) continue;
+      if (seenTargets.has(target)) continue;
+      seenTargets.add(target);
+      const correct = checked.choices[checked.answerIndex];
+      const choices = quizShuffle(checked.choices);
+      out.push({ ...checked, choices, answerIndex: choices.indexOf(correct) });
+    }
+    return out;
+  }
+
+  async function callQuizAi(pool, historyRecords, rawFetch) {
+    if (pool.length < QUIZ_CHOICES) return { questions: [], status: "failed" };
+    const savedKey =
+      inMemoryDecryptedKey || (localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim();
+    if (!savedKey) return { questions: [], status: "no_key" };
+
+    const lines = ["[배운 표현]"];
+    pool.slice(0, QUIZ_AI_POOL_LIMIT).forEach((e) => lines.push(`- ${e.expression} — ${e.meaning}`));
+    lines.push("[최근 교정 문장]");
+    const corrected = historyRecords
+      .map((r) => (r && r.feedback && typeof r.feedback.corrected === "string" ? r.feedback.corrected.trim() : ""))
+      .filter(Boolean)
+      .slice(0, QUIZ_AI_RECENT_LIMIT);
+    if (corrected.length) corrected.forEach((c) => lines.push(`- ${c}`));
+    else lines.push("- (없음)");
+    const bodyObj = {
+      systemInstruction: { parts: [{ text: QUIZ_SYSTEM_INSTRUCTION }] },
+      contents: [{ role: "user", parts: [{ text: lines.join("\n") }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: QUIZ_RESPONSE_SCHEMA,
+        temperature: 0.7,
+      },
+    };
+
+    const models = ["gemini-2.5-flash", "gemini-flash-latest"];
+    for (const modelName of models) {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
+      try {
+        // URL 쿼리 대신 x-goog-api-key 헤더로만 키를 보낸다([Q9])
+        const res = await rawFetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "x-goog-api-key": savedKey,
+          },
+          body: JSON.stringify(bodyObj),
+        });
+        if (!res.ok) continue;
+        const questions = parseAiQuestions(await res.json());
+        if (questions.length) return { questions, status: "ok" };
+      } catch (_) {
+        // 오프라인 · 응답 오류 — 다음 모델, 다 실패하면 내 기록으로 이어간다
+      }
+    }
+    return { questions: [], status: "failed" };
+  }
+
   function makeJsonResponse(status, payload) {
     return new Response(JSON.stringify(payload), {
       status,
@@ -1595,7 +1741,10 @@
           score,
         });
       }
-      const made = buildDailyQuiz(todayStr, []);
+      // AI 는 오늘 세트가 없을 때만, 세트를 만들기 전에 한 번 부른다([Q4] · [Q9])
+      const aiPool = buildExpressionPool(getVocabItems(), getHistoryRecords(), todayStr);
+      const aiResult = await callQuizAi(aiPool, getHistoryRecords(), rawFetch);
+      const made = buildDailyQuiz(todayStr, aiResult.questions);
       if (!made) {
         return makeJsonResponse(200, {
           today: todayStr,
@@ -1608,7 +1757,16 @@
       if (!saveQuizState({ today: made, scores: state.scores })) {
         return makeJsonResponse(500, { error: QUIZ_SAVE_FAILED_MESSAGE, saveFailed: true });
       }
-      return makeJsonResponse(200, { today: todayStr, quiz: made, created: true, score });
+      const createdBody = {
+        today: todayStr,
+        quiz: made,
+        created: true,
+        score,
+        aiCount: made.questions.filter((q) => q.source === "ai").length,
+      };
+      const aiNotice = quizAiNotice(aiResult);
+      if (aiNotice) createdBody.aiNotice = aiNotice;
+      return makeJsonResponse(200, createdBody);
     }
 
     // 12) POST /api/quiz/attempt — 채점 · 점수 줄 고침. 조건 밖이면 400 이고 저장하지 않는다([Q5] · [Q6])

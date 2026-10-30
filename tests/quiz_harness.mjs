@@ -67,8 +67,10 @@ function openWindow(local, clock) {
   ctx.location = { origin: "http://localhost" };
   ctx.fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input.url;
-    calls.push({ url });
+    const headers = (init && init.headers) || {};
+    calls.push({ url, apiKeyHeader: headers["x-goog-api-key"] || null, body: (init && init.body) || "" });
     if (ctx.serverDown) throw new TypeError("Failed to fetch");
+    if (url.includes("generativelanguage") && ctx.aiResponder) return ctx.aiResponder(url, init);
     return new Response("{}", { status: 500 });
   };
   vm.createContext(ctx);
@@ -292,6 +294,121 @@ const out = {};
     attemptRes,
     attemptUnchanged: JSON.stringify(w.ctx.localStorage.dump()) === JSON.stringify(beforeAttempt),
     scoreAfter: getAfter.body.score,
+  };
+}
+
+// ── PR 2: AI 새 문제 ─────────────────────────────────────────────
+const KEY = "TEST-ONLY-fake-gemini-key-quiz-0000";
+const aiItem = (expression, overrides = {}) => ({
+  question: `I really want to ____ this habit.`,
+  choices: [expression, "take after", "look into", "run out of"],
+  answerIndex: 0,
+  explanation: "정답 표현이 문장의 뜻에 맞는다.",
+  expression,
+  meaning: "뜻",
+  example: `I really want to ${expression} this habit.`,
+  ...overrides,
+});
+const geminiReply = (items) =>
+  new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ questions: items }) }] } }] }), { status: 200 });
+
+async function aiScene({ items, key = KEY, status = 200, local: extra = {}, responder = null }) {
+  const clock = makeClock("2026-10-30T09:00:00");
+  const local = { ...device(11, true), ...extra };
+  if (key) local.ie_gemini_api_key = key;
+  const w = openWindow(local, clock);
+  w.ctx.aiResponder = responder || (async () => (status === 200 ? geminiReply(items) : new Response("{}", { status })));
+  const first = await call(w, "POST", "/api/quiz/today");
+  const second = await call(w, "POST", "/api/quiz/today");
+  const aiCalls = w.calls.filter((c) => c.url.includes("generativelanguage"));
+  return { w, first, second, aiCalls };
+}
+
+// AI 3개 — 하나는 내 기록에도 있는 표현(give up): 내 기록 쪽에서 빠져야 한다
+{
+  const { w, first, second, aiCalls } = await aiScene({ items: [aiItem("give up"), aiItem("put up with"), aiItem("cut down on")] });
+  const q = first.body.quiz.questions.find((x) => x.source === "ai" && x.expression === "put up with");
+  const save1 = await call(w, "POST", "/api/vocab", { expression: q.expression, meaning: q.meaning, example: q.example });
+  const save2 = await call(w, "POST", "/api/vocab", { expression: q.expression, meaning: q.meaning, example: q.example });
+  out.aiOk = {
+    first,
+    second,
+    aiCalls: aiCalls.map((c) => ({ url: c.url, apiKeyHeader: c.apiKeyHeader, body: c.body })),
+    KEY,
+    save1,
+    save2,
+  };
+}
+
+// AI 0 ~ 3개마다 내 기록으로 채워 10문제(Q1 AI 부분)
+{
+  const pool = ["put up with", "cut down on", "get rid of"];
+  out.aiCounts = {};
+  for (let n = 0; n <= 3; n += 1) {
+    const { first } = await aiScene({ items: pool.slice(0, n).map((e) => aiItem(e)) });
+    out.aiCounts[n] = {
+      total: first.body.quiz.questions.length,
+      ai: first.body.quiz.questions.filter((x) => x.source === "ai").length,
+      aiCount: first.body.aiCount,
+      aiNotice: first.body.aiNotice || null,
+    };
+  }
+}
+
+// 실패 · 키 없음 · 금고 잠김 — 내 기록으로 10문제와 안내(Q9)
+{
+  const failed = await aiScene({ items: [], status: 500 });
+  const noKey = await aiScene({ items: [aiItem("put up with")], key: null });
+  const locked = await aiScene({
+    items: [aiItem("put up with")],
+    key: null,
+    local: { ie_gemini_api_key_encrypted: "[1,2,3]", ie_gemini_api_key_salt: "[1]", ie_gemini_api_key_iv: "[1]" },
+  });
+  const pick = (r) => ({ total: r.first.body.quiz.questions.length, aiNotice: r.first.body.aiNotice || null, aiCalls: r.aiCalls.length, bodyText: JSON.stringify(r.first.body) });
+  out.aiFailed = { ...pick(failed), KEY };
+  out.aiNoKey = pick(noKey);
+  out.aiLocked = pick(locked);
+}
+
+// ③ AI 응답 — 꼴마다 그 문제만 버린다(좋은 문제 하나와 함께 보내 1개만 남는지)
+{
+  const bad = {
+    choicesThree: aiItem("cut down on", { choices: ["cut down on", "a", "b"] }),
+    choicesFive: aiItem("cut down on", { choices: ["cut down on", "a", "b", "c", "d"] }),
+    choicesDuplicate: aiItem("cut down on", { choices: ["cut down on", "Cut  down on", "b", "c"] }),
+    choiceTooLong: aiItem("cut down on", { choices: ["cut down on", "x".repeat(201), "b", "c"] }),
+    answerOutOfRange: aiItem("cut down on", { answerIndex: 4 }),
+    answerBoolean: aiItem("cut down on", { answerIndex: true }),
+    answerString: aiItem("cut down on", { answerIndex: "0" }),
+    answerNotExpression: aiItem("cut down on", { answerIndex: 1 }),
+    noBlank: aiItem("cut down on", { question: "I really want to cut down on this habit." }),
+    questionTooLong: aiItem("cut down on", { question: "____ " + "x".repeat(300) }),
+    questionEmpty: aiItem("cut down on", { question: "" }),
+    explanationEmpty: aiItem("cut down on", { explanation: " " }),
+    explanationTooLong: aiItem("cut down on", { explanation: "가".repeat(501) }),
+    expressionTooLong: aiItem("x".repeat(201)),
+    meaningEmpty: aiItem("cut down on", { meaning: "" }),
+    meaningTooLong: aiItem("cut down on", { meaning: "가".repeat(301) }),
+    exampleTooLong: aiItem("cut down on", { example: "x".repeat(501) }),
+    missingField: (() => { const it = aiItem("cut down on"); delete it.explanation; return it; })(),
+    duplicateTarget: aiItem("Put Up With"),
+    notObject: "question",
+  };
+  out.aiBad = {};
+  for (const [name, item] of Object.entries(bad)) {
+    const { first } = await aiScene({ items: [aiItem("put up with"), item] });
+    out.aiBad[name] = first.body.quiz.questions.filter((x) => x.source === "ai").length;
+  }
+  const four = await aiScene({ items: ["put up with", "cut down on", "get rid of", "make up for"].map((e) => aiItem(e)) });
+  out.aiBad.moreThanThree = four.first.body.quiz.questions.filter((x) => x.source === "ai").length;
+  const garbled = await aiScene({
+    items: [],
+    responder: async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "not json" }] } }] }), { status: 200 }),
+  });
+  out.aiBad.unparsable = {
+    ai: garbled.first.body.quiz.questions.filter((x) => x.source === "ai").length,
+    total: garbled.first.body.quiz.questions.length,
+    aiNotice: garbled.first.body.aiNotice || null,
   };
 }
 
