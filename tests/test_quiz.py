@@ -30,6 +30,7 @@ from src.quiz_service import build_daily_quiz, build_expression_pool, make_mine_
 from src.quiz_store import QuizStore
 from src.quiz_types import (
     CHOICE_COUNT,
+    DailyQuiz,
     NOT_ENOUGH_MESSAGE,
     QuizQuestion,
     calculate_score,
@@ -295,13 +296,13 @@ class TestQuizServer(unittest.TestCase):
         right = [q["answerIndex"] for q in quiz["questions"]]
         wrong = right.copy()
         wrong[0] = (wrong[0] + 1) % 4
-        status, r1 = self.attempt({"date": quiz["date"], "answers": wrong})
+        status, r1 = self.attempt({"date": quiz["date"], "quizId": quiz["id"], "answers": wrong})
         self.assertEqual(status, 200)
         self.assertEqual((r1["score"], r1["correctCount"], r1["total"]), (90, 9, 10))
         self.assertFalse(r1["results"][0]["correct"])
         self.assertEqual(r1["results"][0]["answer"], quiz["questions"][0]["choices"][right[0]])
         self.assertEqual(r1["results"][0]["explanation"], quiz["questions"][0]["explanation"])
-        status, r2 = self.attempt({"date": quiz["date"], "answers": right})
+        status, r2 = self.attempt({"date": quiz["date"], "quizId": quiz["id"], "answers": right})
         self.assertEqual(r2["score"], 100)
         line = {"date": quiz["date"], "firstScore": 90, "bestScore": 100, "attemptCount": 2, "total": 10}
         self.assertEqual(r2["scoreLine"], line)
@@ -323,17 +324,20 @@ class TestQuizServer(unittest.TestCase):
         bad = {
             "notJson": "{bad",
             "notObject": [1, 2],
-            "badDate": {"date": "2026/10/30", "answers": right},
-            "impossibleDate": {"date": "2026-02-30", "answers": right},
-            "noAnswers": {"date": quiz["date"], "answers": []},
-            "answersNotList": {"date": quiz["date"], "answers": "0123"},
-            "tooFew": {"date": quiz["date"], "answers": right[:9]},
-            "tooMany": {"date": quiz["date"], "answers": [*right, 0]},
-            "outOfRange": {"date": quiz["date"], "answers": [4] * 10},
-            "negative": {"date": quiz["date"], "answers": [-1] * 10},
-            "notInt": {"date": quiz["date"], "answers": [1.5] * 10},
-            "boolean": {"date": quiz["date"], "answers": [True] * 10},
-            "otherDate": {"date": "2026-10-29", "answers": right},
+            "badDate": {"date": "2026/10/30", "quizId": quiz["id"], "answers": right},
+            "impossibleDate": {"date": "2026-02-30", "quizId": quiz["id"], "answers": right},
+            "noAnswers": {"date": quiz["date"], "quizId": quiz["id"], "answers": []},
+            "answersNotList": {"date": quiz["date"], "quizId": quiz["id"], "answers": "0123"},
+            "tooFew": {"date": quiz["date"], "quizId": quiz["id"], "answers": right[:9]},
+            "tooMany": {"date": quiz["date"], "quizId": quiz["id"], "answers": [*right, 0]},
+            "outOfRange": {"date": quiz["date"], "quizId": quiz["id"], "answers": [4] * 10},
+            "negative": {"date": quiz["date"], "quizId": quiz["id"], "answers": [-1] * 10},
+            "notInt": {"date": quiz["date"], "quizId": quiz["id"], "answers": [1.5] * 10},
+            "boolean": {"date": quiz["date"], "quizId": quiz["id"], "answers": [True] * 10},
+            "otherDate": {"date": "2026-10-29", "quizId": quiz["id"], "answers": right},
+            "noQuizId": {"date": quiz["date"], "answers": right},
+            "blankQuizId": {"date": quiz["date"], "quizId": "  ", "answers": right},
+            "otherQuiz": {"date": quiz["date"], "quizId": "quiz-from-another-store", "answers": right},
         }
         before = self.quiz_file()
         for name, body in bad.items():
@@ -343,11 +347,26 @@ class TestQuizServer(unittest.TestCase):
                 self.assertIn("error", data)
                 self.assertEqual(self.quiz_file(), before)
 
+    def test_q5_answers_for_another_set_are_rejected(self) -> None:
+        """[Q5] 경계(PR 1 2회차) — 답안은 화면에 보인 그 세트에만 채점한다. 같은 날짜라도 세트 id 가 다르면 거절하고 저장 그대로."""
+        self.seed(11, True)
+        quiz = self.start()["quiz"]
+        before = self.quiz_file()
+        other = {"date": quiz["date"], "quizId": "quiz-from-another-store",
+                 "answers": [q["answerIndex"] for q in quiz["questions"]]}
+        status, data = self.attempt(other)
+        self.assertEqual(status, 400)
+        self.assertTrue(data["dateChanged"])
+        self.assertIn("퀴즈가 바뀌어", data["error"])
+        self.assertEqual(self.quiz_file(), before)
+        self.assertTrue(quiz["id"].startswith("quiz-"))
+        self.assertEqual(json.loads(before)["today"]["id"], quiz["id"])
+
     def test_q5_rollover_keep_original_date(self) -> None:
         """[Q5] 날짜 넘김 ① — 세트 A 를 만든 뒤 날짜를 넘겨 A 의 답안을 내면 A 의 날짜로 기록된다."""
         self.seed(11, True)
         a = self.start(DAY1)["quiz"]
-        status, r = self.attempt({"date": a["date"], "answers": [q["answerIndex"] for q in a["questions"]]})
+        status, r = self.attempt({"date": a["date"], "quizId": a["id"], "answers": [q["answerIndex"] for q in a["questions"]]})
         self.assertEqual(status, 200)
         self.assertEqual(r["scoreLine"]["date"], DAY1.isoformat())
         self.assertIsNone(self.app.handle_get_quiz_today(today=DAY2)[1]["score"])
@@ -358,7 +377,7 @@ class TestQuizServer(unittest.TestCase):
         a = self.start(DAY1)["quiz"]
         self.start(DAY2)
         before = self.quiz_file()
-        status, data = self.attempt({"date": a["date"], "answers": [q["answerIndex"] for q in a["questions"]]})
+        status, data = self.attempt({"date": a["date"], "quizId": a["id"], "answers": [q["answerIndex"] for q in a["questions"]]})
         self.assertEqual(status, 400)
         self.assertTrue(data["dateChanged"])
         self.assertIn("날짜가 바뀌어", data["error"])
@@ -383,6 +402,9 @@ class TestQuizServer(unittest.TestCase):
             {**good, "kind": "ai"},
             {**good, "question": "x" * 301},
         ]
+        quiz = json.loads(self.quiz_file())["today"]
+        with self.assertRaises(ValidationError):
+            DailyQuiz.from_dict({k: v for k, v in quiz.items() if k != "id"})
         for bad in bads:
             with self.subTest(bad=bad):
                 with self.assertRaises(ValidationError):
@@ -406,7 +428,7 @@ class TestQuizServer(unittest.TestCase):
         quiz = self.start()["quiz"]
         before = self.quiz_file()
         self.app.quiz_store._write_state_unlocked = broken_write
-        status, body = self.attempt({"date": quiz["date"], "answers": [q["answerIndex"] for q in quiz["questions"]]})
+        status, body = self.attempt({"date": quiz["date"], "quizId": quiz["id"], "answers": [q["answerIndex"] for q in quiz["questions"]]})
         self.assertEqual(status, 500)
         self.assertTrue(body["saveFailed"])
         self.assertNotIn("score", body)
@@ -532,14 +554,22 @@ class TestQuizEngine(unittest.TestCase):
         self.assertEqual(full["getScored"]["body"]["score"], line)
 
     def test_q5_rejects_leave_storage_unchanged(self) -> None:
-        """[Q5] 조건 밖 답안 13꼴 — 400 이고 기기 저장소가 거절 전과 같다."""
+        """[Q5] 조건 밖 답안 16꼴 — 400 이고 기기 저장소가 거절 전과 같다."""
         rejects = self.out["full"]["rejects"]
-        self.assertEqual(len(rejects), 13)
+        self.assertEqual(len(rejects), 16)
         for name, r in rejects.items():
             with self.subTest(name=name):
                 self.assertEqual(r["status"], 400)
                 self.assertIn("error", r["body"])
                 self.assertTrue(r["unchanged"])
+
+    def test_q5_answers_for_another_store_set_are_rejected(self) -> None:
+        """[Q5] 경계(PR 1 2회차) — 서버 모드에서 서버가 끊겨 엔진으로 넘어온, 같은 날짜 · 같은 문제 수의 다른 세트 답안은 거절하고 저장 그대로."""
+        scene = self.out["fallback"]
+        self.assertEqual(scene["res"]["status"], 400)
+        self.assertTrue(scene["res"]["body"]["dateChanged"])
+        self.assertIn("퀴즈가 바뀌어", scene["res"]["body"]["error"])
+        self.assertTrue(scene["unchanged"])
 
     def test_q5_rollover_keep_original_date(self) -> None:
         """[Q5] 날짜 넘김 ① — A 의 날짜로 기록된다."""

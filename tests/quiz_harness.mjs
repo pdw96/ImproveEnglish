@@ -68,6 +68,7 @@ function openWindow(local, clock) {
   ctx.fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input.url;
     calls.push({ url });
+    if (ctx.serverDown) throw new TypeError("Failed to fetch");
     return new Response("{}", { status: 500 });
   };
   vm.createContext(ctx);
@@ -167,8 +168,8 @@ const out = {};
   const right = quiz.questions.map((q) => q.answerIndex);
   const oneWrong = right.slice();
   oneWrong[0] = (oneWrong[0] + 1) % 4;
-  const attemptWrong = await call(w, "POST", "/api/quiz/attempt", { date: quiz.date, answers: oneWrong });
-  const attemptRight = await call(w, "POST", "/api/quiz/attempt", { date: quiz.date, answers: right });
+  const attemptWrong = await call(w, "POST", "/api/quiz/attempt", { date: quiz.date, quizId: quiz.id, answers: oneWrong });
+  const attemptRight = await call(w, "POST", "/api/quiz/attempt", { date: quiz.date, quizId: quiz.id, answers: right });
   const getScored = await call(w, "GET", "/api/quiz/today");
   const snapshot = w.ctx.localStorage.dump();
 
@@ -176,17 +177,20 @@ const out = {};
   const badBodies = {
     notJson: "{bad",
     notObject: [1, 2],
-    badDate: { date: "2026/10/30", answers: right },
-    impossibleDate: { date: "2026-02-30", answers: right },
-    noAnswers: { date: quiz.date, answers: [] },
-    answersNotList: { date: quiz.date, answers: "0123" },
-    tooFew: { date: quiz.date, answers: right.slice(0, 9) },
-    tooMany: { date: quiz.date, answers: [...right, 0] },
-    outOfRange: { date: quiz.date, answers: right.map(() => 4) },
-    negative: { date: quiz.date, answers: right.map(() => -1) },
-    notInt: { date: quiz.date, answers: right.map(() => 1.5) },
-    boolean: { date: quiz.date, answers: right.map(() => true) },
-    otherDate: { date: "2026-10-29", answers: right },
+    badDate: { date: "2026/10/30", quizId: quiz.id, answers: right },
+    impossibleDate: { date: "2026-02-30", quizId: quiz.id, answers: right },
+    noAnswers: { date: quiz.date, quizId: quiz.id, answers: [] },
+    answersNotList: { date: quiz.date, quizId: quiz.id, answers: "0123" },
+    tooFew: { date: quiz.date, quizId: quiz.id, answers: right.slice(0, 9) },
+    tooMany: { date: quiz.date, quizId: quiz.id, answers: [...right, 0] },
+    outOfRange: { date: quiz.date, quizId: quiz.id, answers: right.map(() => 4) },
+    negative: { date: quiz.date, quizId: quiz.id, answers: right.map(() => -1) },
+    notInt: { date: quiz.date, quizId: quiz.id, answers: right.map(() => 1.5) },
+    boolean: { date: quiz.date, quizId: quiz.id, answers: right.map(() => true) },
+    otherDate: { date: "2026-10-29", quizId: quiz.id, answers: right },
+    noQuizId: { date: quiz.date, answers: right },
+    blankQuizId: { date: quiz.date, quizId: "  ", answers: right },
+    otherQuiz: { date: quiz.date, quizId: "quiz-from-another-store", answers: right },
   };
   const rejects = {};
   for (const [name, body] of Object.entries(badBodies)) {
@@ -214,13 +218,26 @@ const out = {};
   out.vocabWins = await call(w, "POST", "/api/quiz/today");
 }
 
+// 서버 모드에서 서버 세트를 풀다 서버가 끊겨 제출이 엔진으로 넘어옴 — 기기에도 같은 날짜 · 같은 문제 수의 다른 세트가 있다
+{
+  const clock = makeClock("2026-10-30T09:00:00");
+  const w = openWindow(device(11, true), clock);
+  const local = (await call(w, "POST", "/api/quiz/today")).body.quiz;
+  const serverQuiz = { ...local, id: "quiz-server-side", questions: local.questions.map((q) => ({ ...q, answerIndex: (q.answerIndex + 1) % 4 })) };
+  w.ctx.localStorage.setItem("ie_standalone_mode", "server");
+  w.ctx.serverDown = true; // 서버 연결이 끊김 — 엔진의 fetch 가로채기가 온디바이스 엔진으로 넘긴다
+  const before = w.ctx.localStorage.dump();
+  const res = await call(w, "POST", "/api/quiz/attempt", { date: serverQuiz.date, quizId: serverQuiz.id, answers: serverQuiz.questions.map((q) => q.answerIndex) });
+  out.fallback = { res, unchanged: JSON.stringify(w.ctx.localStorage.dump()) === JSON.stringify(before) };
+}
+
 // 날짜 넘김 ① — 세트 A 를 만든 뒤 날짜를 넘겨 A 의 답안을 내면 A 의 날짜로 남는다
 {
   const clock = makeClock("2026-10-30T23:55:00");
   const w = openWindow(device(11, true), clock);
   const a = (await call(w, "POST", "/api/quiz/today")).body.quiz;
   clock.set("2026-10-31T00:05:00");
-  const res = await call(w, "POST", "/api/quiz/attempt", { date: a.date, answers: a.questions.map((q) => q.answerIndex) });
+  const res = await call(w, "POST", "/api/quiz/attempt", { date: a.date, quizId: a.id, answers: a.questions.map((q) => q.answerIndex) });
   const getNext = await call(w, "GET", "/api/quiz/today");
   out.rolloverKeep = { aDate: a.date, res, getNext };
 }
@@ -233,7 +250,7 @@ const out = {};
   clock.set("2026-10-31T00:05:00");
   const b = (await call(w, "POST", "/api/quiz/today")).body;
   const before = w.ctx.localStorage.dump();
-  const res = await call(w, "POST", "/api/quiz/attempt", { date: a.date, answers: a.questions.map((q) => q.answerIndex) });
+  const res = await call(w, "POST", "/api/quiz/attempt", { date: a.date, quizId: a.id, answers: a.questions.map((q) => q.answerIndex) });
   out.rolloverReplaced = {
     aDate: a.date,
     bDate: b.quiz.date,
@@ -266,7 +283,7 @@ const out = {};
   const quiz = (await call(w, "POST", "/api/quiz/today")).body.quiz;
   const beforeAttempt = w.ctx.localStorage.dump();
   w.ctx.localStorage.failKey = QUIZ_KEY;
-  const attemptRes = await call(w, "POST", "/api/quiz/attempt", { date: quiz.date, answers: quiz.questions.map((q) => q.answerIndex) });
+  const attemptRes = await call(w, "POST", "/api/quiz/attempt", { date: quiz.date, quizId: quiz.id, answers: quiz.questions.map((q) => q.answerIndex) });
   w.ctx.localStorage.failKey = null;
   const getAfter = await call(w, "GET", "/api/quiz/today");
   out.storageFull = {

@@ -15,6 +15,7 @@ import uuid
 from src.feedback_types import ValidationError
 from src.quiz_types import (
     DATE_CHANGED_MESSAGE,
+    QUIZ_CHANGED_MESSAGE,
     DailyQuiz,
     QuizAttemptRequest,
     QuizScore,
@@ -25,7 +26,7 @@ DEFAULT_QUIZ_PATH = pathlib.Path(__file__).resolve().parent.parent / "data" / "q
 
 
 class QuizDateMismatch(ValidationError):
-    """답안의 날짜가 저장된 세트와 다르다(다음 날 세트가 먼저 만들어졌거나 세트가 없다)."""
+    """답안의 날짜 · 세트 id 가 저장된 세트와 다르다(다음 날 세트가 먼저 만들어졌거나, 다른 저장소의 세트이거나, 세트가 없다)."""
 
 
 class QuizStore:
@@ -65,6 +66,8 @@ class QuizStore:
             quiz, scores = self._read_state_unlocked()
             if quiz is None or quiz.date != req.date:
                 raise QuizDateMismatch(DATE_CHANGED_MESSAGE)
+            if quiz.id != req.quiz_id:
+                raise QuizDateMismatch(QUIZ_CHANGED_MESSAGE)
             result = grade_attempt(quiz, req.answers)
             score = result["score"]
             updated: list[QuizScore] = []

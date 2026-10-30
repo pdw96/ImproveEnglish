@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any
+import uuid
 
 from src.feedback_types import ValidationError
 
@@ -27,6 +28,8 @@ MAX_EXAMPLE_LENGTH = 500
 
 NOT_ENOUGH_MESSAGE = "단어장 · 첨삭 기록에 표현이 5개 이상 쌓이면 퀴즈가 열립니다."
 DATE_CHANGED_MESSAGE = "날짜가 바뀌어 새 퀴즈가 열렸습니다. 이 답안은 점수에 남지 않습니다."
+QUIZ_CHANGED_MESSAGE = "풀던 퀴즈가 바뀌어 이 답안은 점수에 남지 않습니다. 퀴즈를 다시 시작해 주세요."
+MAX_QUIZ_ID_LENGTH = 100
 SAVE_FAILED_MESSAGE = "퀴즈 기록을 저장하지 못했습니다. 저장 공간을 확인한 뒤 다시 시도해 주세요."
 
 
@@ -55,6 +58,12 @@ def _require_date(raw: Any, label: str) -> str:
     if parsed.isoformat() != raw:
         raise ValidationError(f"{label}은 YYYY-MM-DD 형식이어야 합니다.")
     return raw
+
+
+def _require_quiz_id(raw: Any) -> str:
+    if not isinstance(raw, str) or not raw.strip() or len(raw.strip()) > MAX_QUIZ_ID_LENGTH:
+        raise ValidationError("퀴즈 세트 id(quizId)가 올바르지 않습니다.")
+    return raw.strip()
 
 
 def _is_plain_int(value: Any) -> bool:
@@ -144,8 +153,9 @@ class QuizQuestion:
 
 @dataclass(frozen=True)
 class DailyQuiz:
-    """오늘의 퀴즈 세트 — 저장되는 세트는 늘 하나다([Q4] 보장)."""
+    """오늘의 퀴즈 세트 — 저장되는 세트는 늘 하나다([Q4] 보장). id 는 답안이 화면에 보인 그 세트에만 채점되게 가르는 이름표다."""
 
+    id: str
     date: str
     created_at: str
     questions: tuple[QuizQuestion, ...]
@@ -153,6 +163,7 @@ class DailyQuiz:
     @classmethod
     def create(cls, quiz_date: date, questions: list[QuizQuestion]) -> "DailyQuiz":
         return cls(
+            id=f"quiz-{uuid.uuid4().hex}",
             date=quiz_date.isoformat(),
             created_at=datetime.now(timezone.utc).isoformat(),
             questions=tuple(questions),
@@ -162,6 +173,7 @@ class DailyQuiz:
     def from_dict(cls, data: Any) -> "DailyQuiz":
         if not isinstance(data, dict):
             raise ValidationError("퀴즈 세트가 객체 형식이 아닙니다.")
+        quiz_id = _require_quiz_id(data.get("id"))
         quiz_date = _require_date(data.get("date"), "퀴즈 날짜(date)")
         created_at = data.get("createdAt")
         if not isinstance(created_at, str) or not created_at.strip():
@@ -172,10 +184,11 @@ class DailyQuiz:
         ):
             raise ValidationError("퀴즈 세트의 문제 수는 5 ~ 10 이어야 합니다.")
         questions = tuple(QuizQuestion.from_dict(q) for q in raw_questions)
-        return cls(date=quiz_date, created_at=created_at.strip(), questions=questions)
+        return cls(id=quiz_id, date=quiz_date, created_at=created_at.strip(), questions=questions)
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "id": self.id,
             "date": self.date,
             "createdAt": self.created_at,
             "questions": [q.to_dict() for q in self.questions],
@@ -184,9 +197,10 @@ class DailyQuiz:
 
 @dataclass(frozen=True)
 class QuizAttemptRequest:
-    """답안 — 세트 날짜와 문제마다 고른 번호(0 ~ 3)의 목록([Q5] 보장)."""
+    """답안 — 세트 날짜 · 세트 id 와 문제마다 고른 번호(0 ~ 3)의 목록([Q5] 보장)."""
 
     date: str
+    quiz_id: str
     answers: tuple[int, ...]
 
     @classmethod
@@ -194,6 +208,7 @@ class QuizAttemptRequest:
         if not isinstance(payload, dict):
             raise ValidationError("요청 본문은 JSON 객체여야 합니다.")
         quiz_date = _require_date(payload.get("date"), "퀴즈 날짜(date)")
+        quiz_id = _require_quiz_id(payload.get("quizId"))
         raw_answers = payload.get("answers")
         if not isinstance(raw_answers, list) or not raw_answers:
             raise ValidationError("답안(answers)은 고른 번호의 목록이어야 합니다.")
@@ -202,7 +217,7 @@ class QuizAttemptRequest:
         for value in raw_answers:
             if not _is_plain_int(value) or not (0 <= value < CHOICE_COUNT):
                 raise ValidationError("고른 번호는 0 ~ 3 의 정수여야 합니다.")
-        return cls(date=quiz_date, answers=tuple(raw_answers))
+        return cls(date=quiz_date, quiz_id=quiz_id, answers=tuple(raw_answers))
 
 
 @dataclass(frozen=True)

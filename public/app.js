@@ -2075,7 +2075,11 @@
       const res = await fetch("/api/quiz/attempt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: dailyQuiz.quiz.date, answers: dailyQuiz.answers }),
+        body: JSON.stringify({
+          date: dailyQuiz.quiz.date,
+          quizId: dailyQuiz.quiz.id,
+          answers: dailyQuiz.answers,
+        }),
       });
       const data = await res.json();
       if (epoch !== dailyQuiz.epoch) return;

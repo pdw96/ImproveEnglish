@@ -858,6 +858,8 @@
     "단어장 · 첨삭 기록에 표현이 5개 이상 쌓이면 퀴즈가 열립니다.";
   const QUIZ_DATE_CHANGED_MESSAGE =
     "날짜가 바뀌어 새 퀴즈가 열렸습니다. 이 답안은 점수에 남지 않습니다.";
+  const QUIZ_CHANGED_MESSAGE =
+    "풀던 퀴즈가 바뀌어 이 답안은 점수에 남지 않습니다. 퀴즈를 다시 시작해 주세요.";
   const QUIZ_SAVE_FAILED_MESSAGE =
     "기기 저장 공간에 퀴즈를 기록하지 못했습니다. 저장 공간을 비운 뒤 다시 시도해 주세요.";
 
@@ -934,8 +936,13 @@
     };
   }
 
+  function isQuizId(v) {
+    return typeof v === "string" && v.trim().length > 0 && v.trim().length <= 100;
+  }
+
   function validateDailyQuiz(raw) {
     if (!raw || typeof raw !== "object") return null;
+    if (!isQuizId(raw.id)) return null;
     if (!isIsoDateStr(raw.date)) return null;
     if (typeof raw.createdAt !== "string" || !raw.createdAt.trim()) return null;
     if (
@@ -951,7 +958,7 @@
       if (!ok) return null;
       questions.push(ok);
     }
-    return { date: raw.date, createdAt: raw.createdAt.trim(), questions };
+    return { id: raw.id.trim(), date: raw.date, createdAt: raw.createdAt.trim(), questions };
   }
 
   function validateQuizScore(raw) {
@@ -1165,6 +1172,7 @@
     const questions = mine.concat(ai);
     if (questions.length < QUIZ_MIN_SIZE) return null;
     return {
+      id: makeId("quiz"),
       date: todayStr,
       createdAt: new Date().toISOString(),
       questions: quizShuffle(questions),
@@ -1208,6 +1216,9 @@
     if (!isIsoDateStr(bodyObj.date)) {
       return { error: "퀴즈 날짜(date)은 YYYY-MM-DD 형식이어야 합니다." };
     }
+    if (!isQuizId(bodyObj.quizId)) {
+      return { error: "퀴즈 세트 id(quizId)가 올바르지 않습니다." };
+    }
     const answers = bodyObj.answers;
     if (!Array.isArray(answers) || answers.length === 0) {
       return { error: "답안(answers)은 고른 번호의 목록이어야 합니다." };
@@ -1220,7 +1231,7 @@
         return { error: "고른 번호는 0 ~ 3 의 정수여야 합니다." };
       }
     }
-    return { date: bodyObj.date, answers: answers.slice() };
+    return { date: bodyObj.date, quizId: bodyObj.quizId.trim(), answers: answers.slice() };
   }
 
   function makeJsonResponse(status, payload) {
@@ -1612,6 +1623,10 @@
           error: QUIZ_DATE_CHANGED_MESSAGE,
           dateChanged: true,
         });
+      }
+      // 답안은 화면에 보인 그 세트에만 채점한다 — 서버가 끊겨 엔진으로 넘어온 다른 세트의 답안은 거절
+      if (state.today.id !== req.quizId) {
+        return makeJsonResponse(400, { error: QUIZ_CHANGED_MESSAGE, dateChanged: true });
       }
       if (req.answers.length !== state.today.questions.length) {
         return makeJsonResponse(400, { error: "답안 개수가 문제 수와 맞지 않습니다." });
