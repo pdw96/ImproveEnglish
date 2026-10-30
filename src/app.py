@@ -25,7 +25,7 @@ from src.history_store import HistoryStore
 from src.mission_service import build_daily_mission_status
 from src.quiz_service import build_daily_quiz
 from src.quiz_store import QuizDateMismatch, QuizStore
-from src.quiz_types import NOT_ENOUGH_MESSAGE, QuizAttemptRequest
+from src.quiz_types import NOT_ENOUGH_MESSAGE, SAVE_FAILED_MESSAGE, QuizAttemptRequest
 from src.routine_store import RoutineStore
 from src.routine_types import DailyGoal
 from src.vocab_store import VocabStore
@@ -288,7 +288,10 @@ class FeedbackApp:
                 today=base_today,
             )
 
-        quiz, created = self.quiz_store.get_or_create(base_today, factory)
+        try:
+            quiz, created = self.quiz_store.get_or_create(base_today, factory)
+        except OSError:
+            return HTTPStatus.INTERNAL_SERVER_ERROR, {"error": SAVE_FAILED_MESSAGE, "saveFailed": True}
         _, score = self.quiz_store.get_today_state(base_today)
         if quiz is None:
             return HTTPStatus.OK, {
@@ -315,6 +318,8 @@ class FeedbackApp:
             result, line = self.quiz_store.submit_attempt(req)
         except QuizDateMismatch as exc:
             return HTTPStatus.BAD_REQUEST, {"error": str(exc), "dateChanged": True}
+        except OSError:
+            return HTTPStatus.INTERNAL_SERVER_ERROR, {"error": SAVE_FAILED_MESSAGE, "saveFailed": True}
         except ValidationError as exc:
             return HTTPStatus.BAD_REQUEST, {"error": str(exc)}
         return HTTPStatus.OK, {**result, "scoreLine": line.to_dict()}

@@ -17,6 +17,7 @@ class FakeStorage {
     return this.data.has(k) ? this.data.get(k) : null;
   }
   setItem(k, v) {
+    if (this.failKey && k === this.failKey) throw new Error("QuotaExceededError");
     this.data.set(k, String(v));
   }
   removeItem(k) {
@@ -241,6 +242,29 @@ const out = {};
   const getRes = await call(w, "GET", "/api/quiz/today");
   const postRes = await call(w, "POST", "/api/quiz/today");
   out.corrupt = { getRes, postRes };
+}
+
+// 저장 공간이 꽉 찬 기기 — 세트를 저장하지 못하면 열지 않고, 점수를 저장하지 못하면 기록했다고 하지 않는다([Q4] · [Q6])
+{
+  const clock = makeClock("2026-10-30T09:00:00");
+  const w = openWindow(device(11, true), clock);
+  w.ctx.localStorage.failKey = QUIZ_KEY;
+  const createRes = await call(w, "POST", "/api/quiz/today");
+  const afterCreate = w.ctx.localStorage.dump();
+  w.ctx.localStorage.failKey = null;
+  const quiz = (await call(w, "POST", "/api/quiz/today")).body.quiz;
+  const beforeAttempt = w.ctx.localStorage.dump();
+  w.ctx.localStorage.failKey = QUIZ_KEY;
+  const attemptRes = await call(w, "POST", "/api/quiz/attempt", { date: quiz.date, answers: quiz.questions.map((q) => q.answerIndex) });
+  w.ctx.localStorage.failKey = null;
+  const getAfter = await call(w, "GET", "/api/quiz/today");
+  out.storageFull = {
+    createRes,
+    createStored: QUIZ_KEY in afterCreate,
+    attemptRes,
+    attemptUnchanged: JSON.stringify(w.ctx.localStorage.dump()) === JSON.stringify(beforeAttempt),
+    scoreAfter: getAfter.body.score,
+  };
 }
 
 process.stdout.write(JSON.stringify(out));

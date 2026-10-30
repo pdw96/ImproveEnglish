@@ -370,6 +370,43 @@ class TestQuizServer(unittest.TestCase):
                 with self.assertRaises(ValidationError):
                     QuizQuestion.from_dict(bad)
 
+    def test_save_failure_is_not_reported_as_success(self) -> None:
+        """[Q4] · [Q6] 저장 파일을 쓰지 못하면 세트를 열지 않고 점수를 기록했다고 하지 않는다(500 과 안내)."""
+        self.seed(11, True)
+        real_write = self.app.quiz_store._write_state_unlocked
+
+        def broken_write(*args, **kwargs):
+            raise OSError("disk full")
+
+        self.app.quiz_store._write_state_unlocked = broken_write
+        status, body = self.app.handle_post_quiz_today(today=DAY1)
+        self.assertEqual(status, 500)
+        self.assertTrue(body["saveFailed"])
+        self.assertIsNone(self.quiz_file())
+
+        self.app.quiz_store._write_state_unlocked = real_write
+        quiz = self.start()["quiz"]
+        before = self.quiz_file()
+        self.app.quiz_store._write_state_unlocked = broken_write
+        status, body = self.attempt({"date": quiz["date"], "answers": [q["answerIndex"] for q in quiz["questions"]]})
+        self.assertEqual(status, 500)
+        self.assertTrue(body["saveFailed"])
+        self.assertNotIn("score", body)
+        self.assertEqual(self.quiz_file(), before)
+
+    def test_screen_drops_responses_that_arrive_after_reset(self) -> None:
+        """화면 — 모드 전환 · 백업 불러오기로 초기화한 뒤 도착한 [퀴즈 시작] · 제출 응답은 버린다(다른 모드의 세트를 되살리지 않게)."""
+        src = (REPO_ROOT / "public" / "app.js").read_text(encoding="utf-8")
+        reset = re.search(r"function resetDailyQuiz\(\) \{(.*?)\n  \}", src, re.S).group(1)
+        self.assertIn("dailyQuiz.epoch += 1;", reset)
+        for fn in ("startDailyQuiz", "submitDailyQuiz"):
+            with self.subTest(fn=fn):
+                body = re.search(rf"async function {fn}\(\) \{{(.*?)\n  \}}\n", src, re.S).group(1)
+                self.assertIn("const epoch = dailyQuiz.epoch;", body)
+                after_json = body.split("await res.json();", 1)[1]
+                self.assertTrue(after_json.lstrip().startswith("if (epoch !== dailyQuiz.epoch) return;"))
+        self.assertIn("resetDailyQuiz();", re.search(r"async function refreshAllData\(\) \{(.*?)\n  \}", src, re.S).group(1))
+
     # [Q10]
     def test_q10_feedback_anchor_unchanged(self) -> None:
         """[Q10] 첨삭 요청 · 응답 구조와 첨삭 지시문 · 스키마가 조각 8 전과 글자까지 같다(서버 · 엔진)."""
@@ -492,6 +529,17 @@ class TestQuizEngine(unittest.TestCase):
         self.assertEqual(scene["res"]["status"], 400)
         self.assertTrue(scene["res"]["body"]["dateChanged"])
         self.assertTrue(scene["unchanged"])
+
+    def test_storage_full_is_not_reported_as_success(self) -> None:
+        """[Q4] · [Q6] 기기 저장 공간이 꽉 차면 세트를 열지 않고(500), 점수를 기록했다고 하지 않는다(500 · 저장 그대로)."""
+        scene = self.out["storageFull"]
+        self.assertEqual(scene["createRes"]["status"], 500)
+        self.assertTrue(scene["createRes"]["body"]["saveFailed"])
+        self.assertFalse(scene["createStored"])
+        self.assertEqual(scene["attemptRes"]["status"], 500)
+        self.assertNotIn("score", scene["attemptRes"]["body"])
+        self.assertTrue(scene["attemptUnchanged"])
+        self.assertIsNone(scene["scoreAfter"])
 
     def test_corrupt_quiz_storage_is_treated_as_no_set(self) -> None:
         """망가진 퀴즈 저장 값은 세트 없음으로 보고 새로 만든다."""

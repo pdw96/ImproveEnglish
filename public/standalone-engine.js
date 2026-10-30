@@ -858,6 +858,8 @@
     "단어장 · 첨삭 기록에 표현이 5개 이상 쌓이면 퀴즈가 열립니다.";
   const QUIZ_DATE_CHANGED_MESSAGE =
     "날짜가 바뀌어 새 퀴즈가 열렸습니다. 이 답안은 점수에 남지 않습니다.";
+  const QUIZ_SAVE_FAILED_MESSAGE =
+    "기기 저장 공간에 퀴즈를 기록하지 못했습니다. 저장 공간을 비운 뒤 다시 시도해 주세요.";
 
   function quizNormalize(str) {
     return String(str || "")
@@ -981,8 +983,17 @@
     return { today, scores };
   }
 
+  // 퀴즈 기록은 저장에 실패하면 false — 저장하지 못한 것을 성공으로 알리지 않는다([Q4] · [Q6])
   function saveQuizState(state) {
-    writeJsonStorage(STORAGE_KEYS.QUIZ, { today: state.today, scores: state.scores });
+    try {
+      localStorage.setItem(
+        STORAGE_KEYS.QUIZ,
+        JSON.stringify({ today: state.today, scores: state.scores })
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   function quizShuffle(list) {
@@ -1569,7 +1580,9 @@
           score: null,
         });
       }
-      saveQuizState({ today: made, scores: state.scores });
+      if (!saveQuizState({ today: made, scores: state.scores })) {
+        return makeJsonResponse(500, { error: QUIZ_SAVE_FAILED_MESSAGE, saveFailed: true });
+      }
       return makeJsonResponse(200, { today: todayStr, quiz: made, created: true, score });
     }
 
@@ -1615,7 +1628,9 @@
         scores.push(line);
       }
       scores.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-      saveQuizState({ today: state.today, scores });
+      if (!saveQuizState({ today: state.today, scores })) {
+        return makeJsonResponse(500, { error: QUIZ_SAVE_FAILED_MESSAGE, saveFailed: true });
+      }
       return makeJsonResponse(200, { ...result, scoreLine: line });
     }
 

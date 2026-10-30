@@ -27,6 +27,7 @@ MAX_EXAMPLE_LENGTH = 500
 
 NOT_ENOUGH_MESSAGE = "단어장 · 첨삭 기록에 표현이 5개 이상 쌓이면 퀴즈가 열립니다."
 DATE_CHANGED_MESSAGE = "날짜가 바뀌어 새 퀴즈가 열렸습니다. 이 답안은 점수에 남지 않습니다."
+SAVE_FAILED_MESSAGE = "퀴즈 기록을 저장하지 못했습니다. 저장 공간을 확인한 뒤 다시 시도해 주세요."
 
 
 def normalize_text(value: str) -> str:

@@ -1917,7 +1917,8 @@
     blank: "빈칸 채우기",
     ai: "AI 새 문제",
   };
-  const dailyQuiz = { quiz: null, index: 0, answers: [], busy: false };
+  // epoch — 초기화할 때마다 올린다. 기다리는 동안 epoch 가 바뀐 응답은 버린다(다른 모드의 세트를 되살리지 않게)
+  const dailyQuiz = { quiz: null, index: 0, answers: [], busy: false, epoch: 0 };
 
   function showDailyQuizView(view) {
     if (!dailyQuizStart) return;
@@ -1928,6 +1929,8 @@
 
   // 모드를 바꾸거나 백업을 불러오면 풀던 세트를 버리고 시작 화면으로 돌린다
   function resetDailyQuiz() {
+    dailyQuiz.epoch += 1;
+    dailyQuiz.busy = false;
     dailyQuiz.quiz = null;
     dailyQuiz.index = 0;
     dailyQuiz.answers = [];
@@ -2065,6 +2068,7 @@
   }
 
   async function submitDailyQuiz() {
+    const epoch = dailyQuiz.epoch;
     dailyQuiz.busy = true;
     dailyQuizNextBtn.disabled = true;
     try {
@@ -2074,6 +2078,7 @@
         body: JSON.stringify({ date: dailyQuiz.quiz.date, answers: dailyQuiz.answers }),
       });
       const data = await res.json();
+      if (epoch !== dailyQuiz.epoch) return;
       if (!res.ok) {
         dailyQuiz.quiz = null;
         showDailyQuizNotice(data.error || "답안을 기록하지 못했습니다. 다시 시도해 주세요.");
@@ -2083,16 +2088,18 @@
       }
       renderDailyQuizResult(data);
     } catch (_) {
+      if (epoch !== dailyQuiz.epoch) return;
       showDailyQuizNotice("답안을 기록하지 못했습니다. 잠시 후 다시 시도해 주세요.");
       showDailyQuizView("start");
     } finally {
-      dailyQuiz.busy = false;
+      if (epoch === dailyQuiz.epoch) dailyQuiz.busy = false;
       dailyQuizNextBtn.disabled = false;
     }
   }
 
   async function startDailyQuiz() {
     if (dailyQuiz.busy) return;
+    const epoch = dailyQuiz.epoch;
     dailyQuiz.busy = true;
     dailyQuizStartBtn.disabled = true;
     dailyQuizRetryBtn.disabled = true;
@@ -2100,6 +2107,7 @@
     try {
       const res = await fetch("/api/quiz/today", { method: "POST" });
       const data = await res.json();
+      if (epoch !== dailyQuiz.epoch) return;
       if (!res.ok || !data.quiz) {
         showDailyQuizNotice(data.message || data.error || "퀴즈를 열지 못했습니다.");
         showDailyQuizView("start");
@@ -2112,10 +2120,11 @@
       renderDailyQuizQuestion();
       showDailyQuizView("play");
     } catch (_) {
+      if (epoch !== dailyQuiz.epoch) return;
       showDailyQuizNotice("퀴즈를 열지 못했습니다. 잠시 후 다시 시도해 주세요.");
       showDailyQuizView("start");
     } finally {
-      dailyQuiz.busy = false;
+      if (epoch === dailyQuiz.epoch) dailyQuiz.busy = false;
       dailyQuizStartBtn.disabled = false;
       dailyQuizRetryBtn.disabled = false;
     }
