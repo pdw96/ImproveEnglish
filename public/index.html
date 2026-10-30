@@ -248,6 +248,51 @@
 
     <!-- 탭 2: 내 단어장 · 오늘의 복습 화면 -->
     <section id="panel-vocab" class="main-grid" hidden>
+      <!-- 조각 8: 오늘의 퀴즈 카드 (하루 한 세트 · 4지선다 · 점수는 연속 학습일에 세지 않음) -->
+      <section id="daily-quiz-card" class="card daily-quiz-card" aria-labelledby="daily-quiz-heading">
+        <div class="card-header-row">
+          <h2 id="daily-quiz-heading" tabindex="-1"><span class="sec-num">00</span> 오늘의 퀴즈</h2>
+          <span id="daily-quiz-status" class="routine-state-badge">오늘 아직 안 풀었어요</span>
+        </div>
+
+        <!-- 시작 -->
+        <div id="daily-quiz-start" class="daily-quiz-start">
+          <p class="history-guide">
+            내 단어장 · 첨삭 기록에서 낸 4지선다 문제를 하루 한 세트 풉니다. 점수는 기록에 남지만 연속 학습일에는 세지 않습니다.
+          </p>
+          <p id="daily-quiz-notice" class="daily-quiz-notice" role="status" hidden></p>
+          <button type="button" id="daily-quiz-start-btn" class="btn btn-primary">퀴즈 시작</button>
+        </div>
+
+        <!-- 한 문제씩 풀기 -->
+        <div id="daily-quiz-play" class="daily-quiz-play" hidden>
+          <div class="daily-quiz-progress">
+            <span id="daily-quiz-counter" class="count-pill">1 / 10</span>
+            <span id="daily-quiz-kind" class="quiz-label"></span>
+          </div>
+          <p id="daily-quiz-question" class="daily-quiz-question"></p>
+          <div id="daily-quiz-choices" class="daily-quiz-choices" role="group" aria-label="보기 네 개"></div>
+          <p id="daily-quiz-feedback" class="daily-quiz-feedback" role="status" hidden></p>
+          <div class="daily-quiz-actions">
+            <button type="button" id="daily-quiz-next-btn" class="btn btn-primary" hidden>다음 문제</button>
+          </div>
+        </div>
+
+        <!-- 결과 -->
+        <div id="daily-quiz-result" class="daily-quiz-result" hidden>
+          <p class="daily-quiz-score-line">
+            <strong id="daily-quiz-score" class="daily-quiz-score">0</strong><span class="daily-quiz-score-unit">점</span>
+            <span id="daily-quiz-score-detail" class="daily-quiz-score-detail"></span>
+          </p>
+          <p id="daily-quiz-first-note" class="history-guide"></p>
+          <p id="daily-quiz-all-right" class="daily-quiz-all-right" hidden>모두 맞혔습니다. 잘했어요!</p>
+          <ol id="daily-quiz-wrong-list" class="daily-quiz-wrong-list"></ol>
+          <div class="daily-quiz-actions">
+            <button type="button" id="daily-quiz-retry-btn" class="btn btn-secondary">다시 풀기</button>
+          </div>
+        </div>
+      </section>
+
       <!-- 오늘의 복습 카드 섹션 -->
       <section class="card review-card" aria-labelledby="review-heading">
         <div class="card-header-row">
