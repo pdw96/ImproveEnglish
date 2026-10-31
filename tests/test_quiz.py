@@ -1,4 +1,4 @@
-"""조각 8(review-quiz) 자동 시험 — PR 1 몫: 설계 ② 보장 Q1(내 기록 부분) · Q2 ~ Q5 · Q10, PR 2 몫: Q1(AI 부분) · Q7 · Q9 · ③ 의 AI 응답.
+"""조각 8(review-quiz) 자동 시험 — PR 1 몫: 설계 ② 보장 Q1(내 기록 부분) · Q2 ~ Q5 · Q10, PR 2 몫: Q1(AI 부분) · Q7 · Q9 · ③ 의 AI 응답, PR 3 몫: Q6 · Q8, 닫기 전 감사 고침: Q8(백업 불러오기 되돌리기 — NC-12).
 
 두 모드를 같은 기준으로 본다.
 - PC 서버 모드: `src/quiz_*.py` 와 `FeedbackApp` 의 퀴즈 길을 임시 폴더의 저장 파일로 직접 돈다.
@@ -56,7 +56,7 @@ HARNESS = REPO_ROOT / "tests" / "quiz_harness.mjs"
 ENGINE_JS = REPO_ROOT / "public" / "standalone-engine.js"
 NODE = shutil.which("node")
 
-# 조각 8 착공 시점(main d099d54)의 첨삭 앵커볼트 지문 — 이 조각이 바꾸면 안 된다([Q10])
+# 조각 8(review-quiz) 착공 시점(main d099d54)의 첨삭 앵커볼트 지문 — 이 조각이 바꾸면 안 된다([Q10])
 ANCHOR_PY_PROMPT_SCHEMA = "363183508305f639bd514b47de02fed3a7c5d14aa3d8245b6b2da2dd5109f5bb"
 ANCHOR_FEEDBACK_TYPES_FILE = "a8df72d29ef4dcfff6d1309a870c64c6b06f5bba7b8cbffa813d07a14d874de5"
 ANCHOR_JS_PROMPT_SCHEMA = "7a872fbd74653f1a54dfa5e474d36a2e6b9247aebde1c4de840b4fffbb066cb8"
@@ -1044,8 +1044,24 @@ class TestQuizEngine(unittest.TestCase):
         """[Q8] 복원 중 퀴즈 기록을 저장하지 못하면(저장 공간) 성공이라 하지 않고 멈추며, 기기 저장소를 하나도 바꾸지 않는다."""
         scene = self.out["backupSaveFail"]
         self.assertIsNone(scene["result"])
-        self.assertIn("퀴즈 기록을 복원하지 못했습니다", scene["error"])
+        self.assertIn("백업 파일을 복원하지 못했습니다", scene["error"])
         self.assertTrue(scene["unchanged"])
+
+    def test_q8_later_save_failure_on_restore_rolls_back_quiz_too(self) -> None:
+        """[Q8] 퀴즈를 쓴 뒤 첨삭 · 단어장 · 루틴 가운데 하나를 저장하지 못하면, 이미 바꾼 칸까지 되돌리고 멈춘다(감사 NC-12).
+
+        기기의 퀴즈 · 첨삭 기록 · 루틴이 불러오기 전 그대로이고, 처음에 없던 단어장 칸은 없는 채로 남는다.
+        """
+        scenes = self.out["backupLaterFail"]
+        self.assertEqual(
+            set(scenes), {"ie_feedback_history_v1", "ie_vocab_items_v1", "ie_routine_state_v1"}
+        )
+        for key, scene in scenes.items():
+            with self.subTest(failKey=key):
+                self.assertIsNone(scene["result"])
+                self.assertIn("백업 파일을 복원하지 못했습니다", scene["error"])
+                self.assertIn("불러오기 전 그대로", scene["error"])
+                self.assertTrue(scene["unchanged"])
 
     def test_corrupt_quiz_storage_is_treated_as_no_set(self) -> None:
         """망가진 퀴즈 저장 값은 세트 없음으로 보고 새로 만든다."""

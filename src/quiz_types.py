@@ -34,7 +34,7 @@ SAVE_FAILED_MESSAGE = "퀴즈 기록을 저장하지 못했습니다. 저장 공
 
 
 def normalize_text(value: str) -> str:
-    """보기 · 대상 표현이 같은지 가르려고 앞뒤 공백을 지우고 소문자로 맞춘다."""
+    """보기 · 대상 표현이 같은지 가르려고 공백을 정리하고(앞뒤 공백을 지우고 가운데 연속 공백은 하나로) 소문자로 맞춘다."""
     return " ".join(value.split()).lower()
 
 

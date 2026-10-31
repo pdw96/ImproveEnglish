@@ -2,8 +2,9 @@
  * ImproveEnglish 조각 5 (standalone-mobile-app): 서버 없이 동작하는 온디바이스 엔진.
  *
  * - 스마트폰 단독 앱(PWA / Android Capacitor / 오프라인) 실행 시 백엔드 서버 없이
- *   조각 1(ai-feedback) · 조각 2(vocab-review) · 조각 3(study-routine) · 조각 4(daily-mission)의
- *   모든 `/api/*` 요청을 브라우저 내부(`localStorage`)에서 동일 규약으로 즉시 처리한다.
+ *   조각 ai-feedback · vocab-review · study-routine · daily-mission · review-quiz 의
+ *   모든 `/api/*` 요청(오늘의 퀴즈 `/api/quiz/today` · `/api/quiz/attempt` · `/api/quiz/scores` 포함)을
+ *   브라우저 내부(`localStorage`)에서 동일 규약으로 즉시 처리한다. 백업 파일 내보내기 · 불러오기(퀴즈 기록 칸 포함)도 맡는다.
  * - 개인 Gemini API 키는 코드에 하드코딩하지 않고, 사용자가 설정 탭에서 입력한 경우에만
  *   기기 내 `localStorage`에서 읽어 `x-goog-api-key` 헤더로 Gemini API를 직접 호출한다([S2] 보장).
  * - API 키가 없거나 오프라인일 때는 내장 스마트 코치가 즉시 3단 첨삭을 반환한다.
@@ -863,6 +864,7 @@
   const QUIZ_SAVE_FAILED_MESSAGE =
     "기기 저장 공간에 퀴즈를 기록하지 못했습니다. 저장 공간을 비운 뒤 다시 시도해 주세요.";
 
+  // 공백 정리(앞뒤 공백을 지우고 가운데 연속 공백은 하나로) 뒤 소문자 — 서버 normalize_text 와 같다
   function quizNormalize(str) {
     return String(str || "")
       .split(/\s+/)
@@ -1234,7 +1236,7 @@
     return { date: bodyObj.date, quizId: bodyObj.quizId.trim(), answers: answers.slice() };
   }
 
-  // ── 조각 8 PR 2: AI 새 문제 — 퀴즈 전용 지시문 · 스키마(첨삭 지시문 · 스키마와 다른 상수) ─────────
+  // ── 조각 8(review-quiz) PR 2: AI 새 문제 — 퀴즈 전용 지시문 · 스키마(첨삭 지시문 · 스키마와 다른 상수) ─────────
   // AI 새 문제 요청은 callQuizAi 한 자리에서만 부른다(설계 ④ — 다음 조각 ai-provider-choice 가 갈아 끼울 자리)
   const QUIZ_AI_POOL_LIMIT = 10;
   const QUIZ_AI_RECENT_LIMIT = 3;
@@ -1957,21 +1959,41 @@
       );
     }
 
-    // 퀴즈 기록을 먼저 저장한다 — 실패하면(저장 공간 등) 다른 기록을 바꾸기 전에 멈추고 알린다([Q8])
-    if (quizBackup && !saveQuizState(quizBackup)) {
+    // 퀴즈 · 첨삭 · 단어장 · 루틴을 한 묶음으로 바꾼다 — 하나라도 저장하지 못하면(저장 공간 등)
+    // 이미 바꾼 칸을 불러오기 전 값으로 되돌리고 알린다. 섞인 채 「복원 완료」라 하지 않는다([Q8] · 감사 NC-12)
+    const writes = [];
+    if (quizBackup) {
+      writes.push([STORAGE_KEYS.QUIZ, { today: quizBackup.today, scores: quizBackup.scores }]);
+    }
+    writes.push([STORAGE_KEYS.HISTORY, rawObj.history]);
+    writes.push([STORAGE_KEYS.VOCAB, rawObj.vocab]);
+    writes.push([
+      STORAGE_KEYS.ROUTINE,
+      {
+        goal: { dailyFeedbackGoal: fbGoal, dailyReviewGoal: rvGoal },
+        reviewLogs: Array.isArray(rawObj.routine.reviewLogs)
+          ? rawObj.routine.reviewLogs
+          : [],
+      },
+    ]);
+    const before = writes.map(([key]) => [key, localStorage.getItem(key)]);
+    const done = [];
+    try {
+      for (const [key, value] of writes) {
+        localStorage.setItem(key, JSON.stringify(value));
+        done.push(key);
+      }
+    } catch (_) {
+      for (const [key, raw] of before.slice(0, done.length).reverse()) {
+        try {
+          if (raw === null) localStorage.removeItem(key);
+          else localStorage.setItem(key, raw);
+        } catch (_) {}
+      }
       throw new Error(
-        "기기 저장 공간이 모자라 퀴즈 기록을 복원하지 못했습니다. 저장 공간을 비운 뒤 다시 불러와 주세요."
+        "기기 저장 공간이 모자라 백업 파일을 복원하지 못했습니다. 기기의 기록은 불러오기 전 그대로입니다. 저장 공간을 비운 뒤 다시 불러와 주세요."
       );
     }
-
-    saveHistoryRecords(rawObj.history);
-    saveVocabItems(rawObj.vocab);
-    saveRoutineState({
-      goal: { dailyFeedbackGoal: fbGoal, dailyReviewGoal: rvGoal },
-      reviewLogs: Array.isArray(rawObj.routine.reviewLogs)
-        ? rawObj.routine.reviewLogs
-        : [],
-    });
     return {
       historyCount: rawObj.history.length,
       vocabCount: rawObj.vocab.length,

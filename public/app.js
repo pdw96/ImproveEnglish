@@ -1,11 +1,12 @@
 /**
  * ImproveEnglish 브라우저 화면 제어 스크립트 — 조각 ai-feedback · vocab-review · study-routine · daily-mission ·
- * standalone-mobile-app · api-key-vault · speaking-practice 의 화면을 맡는다.
+ * standalone-mobile-app · api-key-vault · speaking-practice · review-quiz 의 화면을 맡는다.
  * - 상단 연속 학습 루틴 배너 및 탭 전환 (첨삭 / 단어장·복습 / 학습 루틴·기록 / 설정)
  * - POST /api/feedback, GET /api/history 연동
  * - GET/POST /api/vocab, POST /api/vocab/review, DELETE /api/vocab/<id> 연동
  * - GET /api/routine, POST /api/routine/goal 연동 및 최근 14일 달력·날짜별 내역 표시
  * - GET /api/mission/today 오늘의 미션
+ * - GET/POST /api/quiz/today, POST /api/quiz/attempt 오늘의 퀴즈 카드(단어장 탭), GET /api/quiz/scores 퀴즈 점수 표(학습 기록 탭)
  * - 설정 탭: 단독 앱 모드 · API 키 보관과 금고 · 백업/복원
  * - 말하기: 음성 인식으로 이어 말하기(쉬면 다시 켜기) · 첨삭 노트 [듣기](음성 합성)
  */
@@ -1892,7 +1893,7 @@
     });
   });
 
-  // ── 조각 8: 오늘의 퀴즈 — 하루 한 세트, 한 문제씩 풀고 결과 · 해설을 본다 ──────────────
+  // ── 조각 8(review-quiz): 오늘의 퀴즈 — 하루 한 세트, 한 문제씩 풀고 결과 · 해설을 본다 ──────────────
   const dailyQuizStatus = document.getElementById("daily-quiz-status");
   const dailyQuizStart = document.getElementById("daily-quiz-start");
   const dailyQuizNotice = document.getElementById("daily-quiz-notice");

@@ -587,6 +587,27 @@ async function playDay(w, clock, iso, wrong) {
     target.ctx.localStorage.failKey = null;
     out.backupSaveFail = { error, result, unchanged: JSON.stringify(target.ctx.localStorage.dump()) === before };
   }
+  // 퀴즈를 쓴 뒤 첨삭 · 단어장 · 루틴 가운데 하나를 저장하지 못하는 기기(감사 NC-12) — 이미 바꾼 칸을 되돌리고 멈춘다.
+  // 기기에는 백업과 다른 퀴즈 · 첨삭 기록이 있고, 단어장 칸은 처음부터 없다(되돌릴 때 없던 칸은 지운다).
+  out.backupLaterFail = {};
+  for (const failKey of ["ie_feedback_history_v1", "ie_vocab_items_v1", "ie_routine_state_v1"]) {
+    const seed = w.ctx.localStorage.dump();
+    seed[QUIZ_KEY] = JSON.stringify({ today: null, scores: [] });
+    seed["ie_feedback_history_v1"] = JSON.stringify([{ id: "device-only" }]);
+    delete seed["ie_vocab_items_v1"];
+    const target = openWindow(seed, clock);
+    const before = JSON.stringify(target.ctx.localStorage.dump());
+    target.ctx.localStorage.failKey = failKey;
+    let error = null;
+    let result = null;
+    try {
+      result = target.ctx.ImproveEnglishStandalone.importBackupPayload({ ...backup, history: [], vocab: [] });
+    } catch (e) {
+      error = String(e.message || e);
+    }
+    target.ctx.localStorage.failKey = null;
+    out.backupLaterFail[failKey] = { error, result, unchanged: JSON.stringify(target.ctx.localStorage.dump()) === before };
+  }
 
   out.badBackup = {};
   for (const [name, quiz] of Object.entries(badForms)) {
