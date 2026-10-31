@@ -1614,6 +1614,7 @@
     await fetchMission();
     resetDailyQuiz();
     await fetchDailyQuiz();
+    await fetchQuizScores();
     renderStandaloneSettings();
   }
 
@@ -1914,6 +1915,52 @@
   const dailyQuizAiWords = document.getElementById("daily-quiz-ai-words");
   const dailyQuizAiWordList = document.getElementById("daily-quiz-ai-word-list");
 
+  // 학습 기록 탭 「오늘의 퀴즈 점수」 — 최근 14일 · 최근 7일 평균([Q6])
+  const quizScoreAverage = document.getElementById("quiz-score-average");
+  const quizScoreRows = document.getElementById("quiz-score-rows");
+
+  function renderQuizScores(data) {
+    if (!quizScoreRows) return;
+    quizScoreAverage.textContent =
+      data.recentAverage === null || data.recentAverage === undefined
+        ? "최근 7일 평균 —"
+        : `최근 7일 평균 ${data.recentAverage}점 (${data.recentDays}일)`;
+    quizScoreRows.replaceChildren();
+    (data.days || []).forEach((d) => {
+      const tr = document.createElement("tr");
+      if (d.date === data.today) tr.className = "is-today";
+      const cells = [
+        formatQuizScoreDate(d.date, d.date === data.today),
+        d.firstScore === null ? "—" : `${d.firstScore}점`,
+        d.bestScore === null ? "—" : `${d.bestScore}점`,
+        d.attemptCount ? `${d.attemptCount}회` : "—",
+      ];
+      cells.forEach((text, i) => {
+        const td = document.createElement("td");
+        td.textContent = text;
+        if (i > 0 && text === "—") td.className = "is-empty";
+        tr.appendChild(td);
+      });
+      quizScoreRows.appendChild(tr);
+    });
+  }
+
+  function formatQuizScoreDate(dateStr, isToday) {
+    const [, m, d] = dateStr.split("-");
+    return `${Number(m)}/${Number(d)}${isToday ? " (오늘)" : ""}`;
+  }
+
+  async function fetchQuizScores() {
+    if (!quizScoreRows) return;
+    try {
+      const res = await fetch("/api/quiz/scores");
+      if (!res.ok) return;
+      renderQuizScores(await res.json());
+    } catch (_) {
+      // 초기 로드 실패 시 무시
+    }
+  }
+
   const DAILY_QUIZ_KIND_LABELS = {
     meaning: "뜻 고르기",
     expression: "표현 고르기",
@@ -2069,6 +2116,7 @@
     renderDailyQuizAiWords();
     renderDailyQuizStatus(line || null);
     showDailyQuizView("result");
+    fetchQuizScores();
   }
 
   // [Q7] AI 새 문제마다(맞힌 것 · 틀린 것 모두) 대상 표현 · 뜻과 [단어장에 담기]. 담은 결과는 버튼 곁에 보인다
@@ -2216,4 +2264,5 @@
   fetchRoutine();
   fetchMission();
   fetchDailyQuiz();
+  fetchQuizScores();
 })();

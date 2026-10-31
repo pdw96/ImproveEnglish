@@ -27,7 +27,12 @@ from src.mission_service import build_daily_mission_status
 from src.quiz_ai import AiQuestionsResult, generate_ai_questions
 from src.quiz_service import build_daily_quiz, build_expression_pool
 from src.quiz_store import QuizDateMismatch, QuizStore
-from src.quiz_types import NOT_ENOUGH_MESSAGE, SAVE_FAILED_MESSAGE, QuizAttemptRequest
+from src.quiz_types import (
+    NOT_ENOUGH_MESSAGE,
+    SAVE_FAILED_MESSAGE,
+    QuizAttemptRequest,
+    build_score_summary,
+)
 from src.routine_store import RoutineStore
 from src.routine_types import DailyGoal
 from src.vocab_store import VocabStore
@@ -348,6 +353,13 @@ class FeedbackApp:
                 body["aiNotice"] = notice
         return HTTPStatus.OK, body
 
+    def handle_get_quiz_scores(
+        self, today: date | None = None
+    ) -> tuple[int, dict[str, object]]:
+        """학습 기록 탭 「퀴즈 점수」 — 최근 14일 날짜별 첫 점수 · 최고 점수와 최근 7일 평균([Q6])."""
+        base_today = today or date.today()
+        return HTTPStatus.OK, build_score_summary(self.quiz_store.list_scores(), base_today)
+
     def handle_post_quiz_attempt(self, raw_body: bytes) -> tuple[int, dict[str, object]]:
         """답안을 채점하고 그 세트 날짜의 점수 줄을 고친다. 조건 밖이면 400 이고 저장하지 않는다([Q5] · [Q6])."""
         payload, err = self._parse_json_body(raw_body)
@@ -435,6 +447,10 @@ def create_http_server(
                 return
             if parsed.path == "/api/quiz/today":
                 status, data = active_app.handle_get_quiz_today()
+                self._send_json(status, data)
+                return
+            if parsed.path == "/api/quiz/scores":
+                status, data = active_app.handle_get_quiz_scores()
                 self._send_json(status, data)
                 return
             if parsed.path.startswith("/api/"):

@@ -507,6 +507,32 @@
 
         <p id="goal-status-msg" class="status-msg" role="status" aria-live="polite" hidden></p>
       </section>
+
+      <!-- ④ 조각 8: 오늘의 퀴즈 점수 (연속 학습일 · 하루 목표와는 따로) -->
+      <section id="quiz-score-card" class="card quiz-score-card" aria-labelledby="quiz-score-heading">
+        <div class="card-header-row">
+          <h2 id="quiz-score-heading"><span class="sec-num">04</span> 오늘의 퀴즈 점수</h2>
+          <span id="quiz-score-average" class="count-pill">최근 7일 평균 —</span>
+        </div>
+        <p class="history-guide">
+          하루 10문제라 점수가 날마다 크게 흔들립니다. 실력 흐름은 <strong>최근 7일 평균</strong>(푼 날의 첫 점수 평균)으로 보세요.
+          퀴즈는 연속 학습일 · 하루 목표에 세지 않습니다.
+        </p>
+        <div class="quiz-score-table-wrap">
+          <table class="quiz-score-table">
+            <caption class="sr-only">최근 14일 날짜별 퀴즈 점수</caption>
+            <thead>
+              <tr>
+                <th scope="col">날짜</th>
+                <th scope="col">첫 점수</th>
+                <th scope="col">최고 점수</th>
+                <th scope="col">푼 횟수</th>
+              </tr>
+            </thead>
+            <tbody id="quiz-score-rows"></tbody>
+          </table>
+        </div>
+      </section>
     </section>
 
     <!-- 탭 4: 모바일 앱 · 설정 (서버 없는 단독 모드, API 키 보관, 백업/복원, 앱 설치) -->

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 import uuid
 
@@ -267,6 +267,40 @@ class QuizScore:
             attempt_count=self.attempt_count + 1,
             total=self.total,
         )
+
+
+SCORE_TABLE_DAYS = 14
+SCORE_AVERAGE_DAYS = 7
+
+
+def build_score_summary(scores: list["QuizScore"], today: date) -> dict[str, Any]:
+    """학습 기록 탭의 「퀴즈 점수」 — 최근 14일(오늘이 맨 앞) 날짜별 점수 줄과 최근 7일 평균([Q6]).
+
+    7일 평균 = 오늘을 포함한 최근 7일 가운데 퀴즈를 푼 날들의 첫 점수 평균(0.5 는 올림). 푼 날이 없으면 None.
+    퀴즈 기록만 읽는다 — 연속 학습일 · 하루 목표와는 무관하다.
+    """
+    by_date = {s.date: s for s in scores}
+    days: list[dict[str, Any]] = []
+    for offset in range(SCORE_TABLE_DAYS):
+        day = (today - timedelta(days=offset)).isoformat()
+        line = by_date.get(day)
+        days.append(
+            {
+                "date": day,
+                "firstScore": line.first_score if line else None,
+                "bestScore": line.best_score if line else None,
+                "attemptCount": line.attempt_count if line else 0,
+                "total": line.total if line else None,
+            }
+        )
+    recent = [d["firstScore"] for d in days[:SCORE_AVERAGE_DAYS] if d["firstScore"] is not None]
+    average = int((sum(recent) * 2 + len(recent)) // (len(recent) * 2)) if recent else None
+    return {
+        "today": today.isoformat(),
+        "days": days,
+        "recentAverage": average,
+        "recentDays": len(recent),
+    }
 
 
 def calculate_score(correct_count: int, total: int) -> int:

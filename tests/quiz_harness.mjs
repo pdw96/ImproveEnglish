@@ -509,4 +509,81 @@ async function aiScene({ items, key = KEY, status = 200, local: extra = {}, resp
   };
 }
 
+// ── PR 3: 점수 표 · 7일 평균 · 루틴과 분리 · 백업 ─────────────────
+// 날마다 퀴즈 — 10/16(14일 밖) 50 · 10/22(7일 밖, 14일 안) 60 · 10/28 70 · 10/30 80 · 10/31 90 → 다시 풀어 100
+async function playDay(w, clock, iso, wrong) {
+  clock.set(iso);
+  const quiz = (await call(w, "POST", "/api/quiz/today")).body.quiz;
+  const answers = quiz.questions.map((q, i) => (i < wrong ? (q.answerIndex + 1) % 4 : q.answerIndex));
+  return call(w, "POST", "/api/quiz/attempt", { date: quiz.date, quizId: quiz.id, answers });
+}
+{
+  const clock = makeClock("2026-10-31T09:00:00");
+  const w = openWindow(device(11, true), clock);
+  const routineBefore = await call(w, "GET", "/api/routine");
+  await playDay(w, clock, "2026-10-16T09:00:00", 5);
+  await playDay(w, clock, "2026-10-22T09:00:00", 4);
+  await playDay(w, clock, "2026-10-28T09:00:00", 3);
+  await playDay(w, clock, "2026-10-30T09:00:00", 2);
+  await playDay(w, clock, "2026-10-31T09:00:00", 1);
+  clock.set("2026-10-31T10:00:00");
+  const q = (await call(w, "POST", "/api/quiz/today")).body.quiz;
+  await call(w, "POST", "/api/quiz/attempt", { date: q.date, quizId: q.id, answers: q.questions.map((x) => x.answerIndex) });
+  const scores = await call(w, "GET", "/api/quiz/scores");
+  const routineAfter = await call(w, "GET", "/api/routine");
+  const engine = w.ctx.ImproveEnglishStandalone;
+  const backup = JSON.parse(JSON.stringify(engine.exportBackupPayload()));
+  out.scores = {
+    scores,
+    routineSame: JSON.stringify(routineBefore.body) === JSON.stringify(routineAfter.body),
+    backupHasQuiz: Boolean(backup.quiz) && Array.isArray(backup.quiz.scores),
+    backupScoreCount: backup.quiz ? backup.quiz.scores.length : null,
+  };
+
+  // 새 기기에 복원 — 같은 점수 표
+  const fresh = openWindow(device(11, true), clock);
+  const restored = fresh.ctx.ImproveEnglishStandalone.importBackupPayload(backup);
+  out.restore = { restored, scores: await call(fresh, "GET", "/api/quiz/scores") };
+
+  // 옛 백업(quiz 칸 없음) — 기기의 퀴즈 기록은 그대로
+  const old = JSON.parse(JSON.stringify(backup));
+  delete old.quiz;
+  const keep = openWindow(w.ctx.localStorage.dump(), clock);
+  const quizBefore = keep.ctx.localStorage.getItem(QUIZ_KEY);
+  keep.ctx.ImproveEnglishStandalone.importBackupPayload(old);
+  out.oldBackup = { quizKept: keep.ctx.localStorage.getItem(QUIZ_KEY) === quizBefore };
+
+  // 틀린 quiz 칸 — 백업 전체를 거절하고 기기 저장소를 하나도 바꾸지 않는다
+  const goodToday = backup.quiz.today;
+  const line = backup.quiz.scores[0];
+  const badForms = {
+    notObject: "quiz",
+    scoresMissing: { today: null },
+    scoresNotList: { today: null, scores: "x" },
+    scoreOver100: { today: null, scores: [{ ...line, firstScore: 101, bestScore: 101 }] },
+    scoreNotInt: { today: null, scores: [{ ...line, firstScore: 50.5 }] },
+    bestBelowFirst: { today: null, scores: [{ ...line, firstScore: 90, bestScore: 80 }] },
+    attemptZero: { today: null, scores: [{ ...line, attemptCount: 0 }] },
+    totalFour: { today: null, scores: [{ ...line, total: 4 }] },
+    totalEleven: { today: null, scores: [{ ...line, total: 11 }] },
+    badDate: { today: null, scores: [{ ...line, date: "2026-13-01" }] },
+    duplicateDate: { today: null, scores: [line, { ...line }] },
+    todayNoId: { today: { ...goodToday, id: undefined }, scores: [] },
+    todayBadQuestion: { today: { ...goodToday, questions: goodToday.questions.map((x, i) => (i === 0 ? { ...x, answerIndex: 4 } : x)) }, scores: [] },
+    todayTooFew: { today: { ...goodToday, questions: goodToday.questions.slice(0, 4) }, scores: [] },
+  };
+  out.badBackup = {};
+  for (const [name, quiz] of Object.entries(badForms)) {
+    const target = openWindow(w.ctx.localStorage.dump(), clock);
+    const before = JSON.stringify(target.ctx.localStorage.dump());
+    let error = null;
+    try {
+      target.ctx.ImproveEnglishStandalone.importBackupPayload({ ...backup, history: [], vocab: [], quiz });
+    } catch (e) {
+      error = String(e.message || e);
+    }
+    out.badBackup[name] = { error, unchanged: JSON.stringify(target.ctx.localStorage.dump()) === before };
+  }
+}
+
 process.stdout.write(JSON.stringify(out));
