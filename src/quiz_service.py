@@ -10,6 +10,7 @@ import uuid
 
 from src.feedback_types import FeedbackRecord
 from src.quiz_types import (
+    is_quiz_worthy,
     AI_MAX_COUNT,
     BLANK_MARK,
     CHOICE_COUNT,
@@ -64,6 +65,8 @@ def build_expression_pool(
             saved = vocab_by_key.get(key)
             if saved is not None:
                 expr, mean, example = saved.expression.strip(), saved.meaning.strip(), saved.example
+            if not is_quiz_worthy(expr, mean):
+                return None  # 설명문 뜻 · 두 문장이 붙은 표현은 문제로 내지 않는다
             entries[key] = PoolEntry(expr, mean, example.strip())
             order.append(key)
         return key

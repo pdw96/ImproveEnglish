@@ -1020,6 +1020,18 @@
 
   // 표현 모음 — 복습 예정 단어장 → 최근 첨삭 핵심 표현 → 나머지 단어장 순(설계 ③)
   // 순서와 출처 우선은 따로다: 대상 표현이 같으면 표현 · 뜻 · 예문은 늘 단어장 것을 쓴다
+  // 퀴즈 문제로 낼 만한 표현인가 — 서버 is_quiz_worthy 와 같다(실제 기기 확인 뒤 저자 판정).
+  // 뜻이 40자를 넘거나 「…니다.」 · 「…요.」 로 끝나는 설명문, 가운데에 문장 끝 부호 뒤 띄어쓰기가 있는 표현은 쓰지 않는다
+  const QUIZ_MEANING_MAX_LENGTH = 40;
+  function quizWorthy(expression, meaning) {
+    const expr = String(expression || "").trim();
+    const mean = String(meaning || "").trim();
+    if (!expr || !mean || mean.length > QUIZ_MEANING_MAX_LENGTH) return false;
+    const tail = mean.replace(/[.。!\s]+$/, "");
+    if (tail.endsWith("니다") || tail.endsWith("요")) return false;
+    return !/[.?!:;]\s+\S/.test(expr);
+  }
+
   function buildExpressionPool(vocabItems, historyRecords, todayStr) {
     const entries = new Map();
     const vocabByKey = new Map();
@@ -1041,6 +1053,7 @@
           mean = saved.meaning.trim();
           ex = saved.example;
         }
+        if (!quizWorthy(expr, mean)) return null; // 설명문 뜻 · 두 문장이 붙은 표현은 문제로 내지 않는다
         entries.set(key, {
           expression: expr,
           meaning: mean,
@@ -1308,7 +1321,16 @@
     const seenTargets = new Set();
     for (const item of items) {
       if (out.length >= QUIZ_AI_MAX) break;
-      if (!item || typeof item !== "object") continue;
+      const { question } = checkAiItem(item, seenTargets);
+      if (question) out.push(question);
+    }
+    return out;
+  }
+
+  // AI 문제 하나를 ③ 의 모양으로 검사한다 — 통과하면 보기를 다시 섞은 문제, 아니면 떨어진 이유(진단에 보임)
+  function checkAiItem(item, seenTargets) {
+    {
+      if (!item || typeof item !== "object") return { question: null, reason: "문제 모양이 객체가 아님" };
       const checked = validateQuizQuestion({
         id: makeId("qa"),
         kind: "ai",
@@ -1321,17 +1343,23 @@
         meaning: item.meaning,
         example: item.example,
       });
-      if (!checked) continue;
+      if (!checked) {
+        return { question: null, reason: "모양 검사 탈락(보기 4개 · 서로 다름 · 정답 번호 0~3 · 칸 비었거나 너무 김)" };
+      }
       const target = quizNormalize(checked.expression);
-      if (!checked.question.includes(QUIZ_BLANK)) continue;
-      if (quizNormalize(checked.choices[checked.answerIndex]) !== target) continue;
-      if (seenTargets.has(target)) continue;
+      if (!checked.question.includes(QUIZ_BLANK)) return { question: null, reason: "문제에 빈칸 ____ 이 없음" };
+      if (quizNormalize(checked.choices[checked.answerIndex]) !== target) {
+        return {
+          question: null,
+          reason: `정답 보기 「${checked.choices[checked.answerIndex]}」 가 대상 표현 「${checked.expression}」 과 다름`,
+        };
+      }
+      if (seenTargets.has(target)) return { question: null, reason: "같은 대상 표현이 겹침" };
       seenTargets.add(target);
       const correct = checked.choices[checked.answerIndex];
       const choices = quizShuffle(checked.choices);
-      out.push({ ...checked, choices, answerIndex: choices.indexOf(correct) });
+      return { question: { ...checked, choices, answerIndex: choices.indexOf(correct) }, reason: "통과" };
     }
-    return out;
   }
 
   async function callQuizAi(pool, historyRecords, rawFetch) {
@@ -1380,6 +1408,91 @@
       }
     }
     return { questions: [], status: "failed" };
+  }
+
+  // 진단(임시) — 주소에 ?quiz-debug 가 있을 때 화면의 [AI 진단] 이 부른다. 오늘 세트 만들기와 같은 표현 모음 · 요청으로
+  // Gemini 를 부르고, 모델마다 응답 상태와 문제마다 통과 · 떨어진 이유를 돌려준다. 아무것도 저장하지 않고 키는 담지 않는다.
+  // 실제 기기에서 AI 새 문제가 0개인 원인을 확인한 뒤 뺀다(설계 끝 「실제 기기 확인 뒤」).
+  async function diagnoseQuizAi(rawFetch) {
+    const todayStr = getLocalTodayStr();
+    const history = getHistoryRecords();
+    const pool = buildExpressionPool(getVocabItems(), history, todayStr);
+    const report = { today: todayStr, poolCount: pool.length, pool: pool.slice(0, QUIZ_AI_POOL_LIMIT).map((e) => e.expression), attempts: [] };
+    const savedKey = inMemoryDecryptedKey || (localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim();
+    if (!savedKey) {
+      report.status = "키 없음 또는 금고 잠김";
+      return report;
+    }
+    if (pool.length < QUIZ_CHOICES) {
+      report.status = "표현이 4개 미만이라 AI 를 부르지 않음";
+      return report;
+    }
+    const redact = (text) => String(text || "").split(savedKey).join("[키]");
+    const lines = ["[배운 표현]"];
+    pool.slice(0, QUIZ_AI_POOL_LIMIT).forEach((e) => lines.push(`- ${e.expression} — ${e.meaning}`));
+    lines.push("[최근 교정 문장]");
+    const corrected = history
+      .map((r) => (r && r.feedback && typeof r.feedback.corrected === "string" ? r.feedback.corrected.trim() : ""))
+      .filter(Boolean)
+      .slice(0, QUIZ_AI_RECENT_LIMIT);
+    if (corrected.length) corrected.forEach((c) => lines.push(`- ${c}`));
+    else lines.push("- (없음)");
+    const bodyObj = {
+      systemInstruction: { parts: [{ text: QUIZ_SYSTEM_INSTRUCTION }] },
+      contents: [{ role: "user", parts: [{ text: lines.join("\n") }] }],
+      generationConfig: { responseMimeType: "application/json", responseSchema: QUIZ_RESPONSE_SCHEMA, temperature: 0.7 },
+    };
+    for (const modelName of ["gemini-2.5-flash", "gemini-flash-latest"]) {
+      const attempt = { model: modelName };
+      report.attempts.push(attempt);
+      try {
+        const res = await rawFetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json; charset=utf-8", "x-goog-api-key": savedKey },
+            body: JSON.stringify(bodyObj),
+          }
+        );
+        attempt.httpStatus = res.status;
+        const raw = await res.text();
+        if (!res.ok) {
+          attempt.error = redact(raw).slice(0, 600);
+          continue;
+        }
+        let items = null;
+        try {
+          const parsed = JSON.parse(raw);
+          const cand = parsed && parsed.candidates && parsed.candidates[0];
+          attempt.finishReason = cand && cand.finishReason;
+          const data = JSON.parse(cand.content.parts[0].text);
+          items = data && Array.isArray(data.questions) ? data.questions : null;
+        } catch (e) {
+          attempt.error = `응답 글을 JSON 으로 읽지 못함: ${redact(raw).slice(0, 600)}`;
+          continue;
+        }
+        if (!items) {
+          attempt.error = "응답에 questions 목록이 없음";
+          continue;
+        }
+        const seen = new Set();
+        attempt.items = items.map((item) => {
+          const { reason } = checkAiItem(item, seen);
+          const it = item && typeof item === "object" ? item : {};
+          return {
+            reason,
+            expression: it.expression,
+            question: it.question,
+            choices: it.choices,
+            answerIndex: it.answerIndex,
+          };
+        });
+        if (attempt.items.some((x) => x.reason === "통과")) break;
+      } catch (e) {
+        attempt.error = `연결 오류: ${redact(e && e.message)}`;
+      }
+    }
+    return report;
   }
 
   // 학습 기록 탭 「퀴즈 점수」 — 최근 14일(오늘이 맨 앞)과 최근 7일 평균(푼 날 첫 점수 평균, 0.5 올림)([Q6])
@@ -2034,6 +2147,10 @@
   };
 
   window.ImproveEnglishStandalone = {
+    // 진단(임시) — ?quiz-debug 화면의 [AI 진단] 이 부른다. 원인을 확인한 뒤 뺀다
+    diagnoseQuizAi() {
+      return diagnoseQuizAi(originalFetch);
+    },
     getMode() {
       return localStorage.getItem(STORAGE_KEYS.MODE) || "standalone";
     },

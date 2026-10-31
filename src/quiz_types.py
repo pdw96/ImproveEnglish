@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
+import re
 import uuid
 
 from src.feedback_types import ValidationError
@@ -31,6 +32,25 @@ DATE_CHANGED_MESSAGE = "날짜가 바뀌어 새 퀴즈가 열렸습니다. 이 �
 QUIZ_CHANGED_MESSAGE = "풀던 퀴즈가 바뀌어 이 답안은 점수에 남지 않습니다. 퀴즈를 다시 시작해 주세요."
 MAX_QUIZ_ID_LENGTH = 100
 SAVE_FAILED_MESSAGE = "퀴즈 기록을 저장하지 못했습니다. 저장 공간을 확인한 뒤 다시 시도해 주세요."
+
+
+QUIZ_MEANING_MAX_LENGTH = 40
+_SENTENCE_BREAK = re.compile(r"[.?!:;]\s+\S")
+
+
+def is_quiz_worthy(expression: str, meaning: str) -> bool:
+    """퀴즈 문제로 낼 만한 표현인가 — 뜻이 짧은 뜻풀이이고 표현이 한 덩어리일 때만(실제 기기 확인 뒤 저자 판정).
+
+    뜻이 40자를 넘거나 「…니다.」 · 「…요.」 처럼 설명 문장으로 끝나면, 표현 가운데에 문장 끝 부호(. ? ! : ;) 뒤
+    띄어쓰기가 있으면(두 문장이 붙음) 쓰지 않는다. 단어장 자체는 그대로 둔다.
+    """
+    expr = expression.strip()
+    mean = meaning.strip()
+    if not expr or not mean or len(mean) > QUIZ_MEANING_MAX_LENGTH:
+        return False
+    if mean.rstrip(".。! ").endswith(("니다", "요")):
+        return False
+    return _SENTENCE_BREAK.search(expr) is None
 
 
 def normalize_text(value: str) -> str:

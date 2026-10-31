@@ -46,6 +46,7 @@ from src.quiz_types import (
     NOT_ENOUGH_MESSAGE,
     QuizQuestion,
     calculate_score,
+    is_quiz_worthy,
     normalize_text,
 )
 from src.routine_store import RoutineStore
@@ -74,6 +75,31 @@ WORDS = [
     ("turn down", "거절하다", ""),
     ("bring up", "꺼내다", ""),
 ]
+
+# 실제 기기 확인(2026-10-31)에서 본 꼴 — 퀴즈 문제로 내지 않는다(설명문 뜻 · 40자 넘는 뜻 · 두 문장이 붙은 표현)
+UNWORTHY = [
+    ("reschedule the meeting", "고객사나 상사에게 정중하게 회의 일정 변경을 요청할 때 가장 무난한 표현입니다.", ""),
+    ("just to let you know", "참고로 말씀드리자면, 알려드리자면 — 이메일 첫머리에서 가볍게 소식을 전할 때 쓰는 말", ""),
+    ("I was wondering if you could check this: Drop off my luggage.", "짐을 맡기다", ""),
+]
+
+
+def unworthy_vocab_dicts() -> list[dict]:
+    return [
+        {
+            "id": f"u-{i}",
+            "expression": e,
+            "meaning": m,
+            "example": x,
+            "box": 0,
+            "reviewCount": 0,
+            "nextReviewDate": "2026-10-01",
+            "createdAt": "2026-10-01T00:00:00Z",
+            "lastReviewedAt": None,
+        }
+        for i, (e, m, x) in enumerate(UNWORTHY)
+    ]
+
 
 HISTORY = [
     {
@@ -228,6 +254,42 @@ class TestQuizServer(unittest.TestCase):
         )
         self.assertEqual(len(pool), 4)
         self.assertEqual(len(pool[0].blank_sources), 1)
+
+    # 실제 기기 확인 뒤(저자 판정): 설명문 뜻 · 두 문장 붙은 표현은 문제로 내지 않는다
+    def test_unworthy_expressions_are_not_asked(self) -> None:
+        """설명문 뜻(…니다.) · 40자 넘는 뜻 · 가운데에 문장 끝 부호가 있는 표현은 세트에도 보기에도 나오지 않는다."""
+        self.vocab_path.write_text(
+            json.dumps(vocab_dicts(5) + unworthy_vocab_dicts(), ensure_ascii=False), encoding="utf-8"
+        )
+        body = self.start()
+        quiz = body["quiz"]
+        self.assertEqual(len(quiz["questions"]), 5)
+        bad = {normalize_text(e) for e, _, _ in UNWORTHY} | {normalize_text(m) for _, m, _ in UNWORTHY}
+        for q in quiz["questions"]:
+            self.assertNotIn(normalize_text(q["expression"]), bad)
+            for c in q["choices"]:
+                self.assertNotIn(normalize_text(c), bad)
+
+    def test_unworthy_expressions_do_not_count_toward_opening(self) -> None:
+        """걸러 낸 표현은 「5개 이상이면 열림」에도 세지 않는다 — 쓸 만한 표현 4개 + 걸러 낼 표현 3개면 열지 않는다."""
+        self.vocab_path.write_text(
+            json.dumps(vocab_dicts(4) + unworthy_vocab_dicts(), ensure_ascii=False), encoding="utf-8"
+        )
+        body = self.start()
+        self.assertIsNone(body["quiz"])
+        self.assertTrue(body["notEnough"])
+
+    def test_quiz_worthy_rule(self) -> None:
+        """규칙 그 자체 — 짧은 뜻풀이(…하다)는 통과, 설명문 · 긴 뜻 · 두 문장 붙은 표현은 탈락."""
+        self.assertTrue(is_quiz_worthy("give up", "포기하다"))
+        self.assertTrue(is_quiz_worthy("Just to let you know.", "참고로 말하자면"))
+        self.assertTrue(is_quiz_worthy("reschedule A for B", "A(일정)를 B(새 시간)로 변경하다"))
+        self.assertTrue(is_quiz_worthy("e.g.", "예를 들어"))
+        self.assertFalse(is_quiz_worthy("reschedule", "회의 일정을 바꿀 때 무난한 표현입니다."))
+        self.assertFalse(is_quiz_worthy("check in", "체크인해요"))
+        self.assertFalse(is_quiz_worthy("x", "가" * 41))
+        self.assertFalse(is_quiz_worthy("Thanks. See you.", "고마워, 또 봐"))
+        self.assertFalse(is_quiz_worthy("Could you check this: drop off", "맡기다"))
 
     # [Q2]
     def test_q2_four_expressions_do_not_open_and_save_nothing(self) -> None:
@@ -823,6 +885,38 @@ class TestQuizEngine(unittest.TestCase):
               if normalize_text(q["expression"]) == "looking forward to"]
         self.assertEqual(len(qs), 1)
         self.assertEqual((qs[0]["meaning"], qs[0]["example"]), ("단어장에 적은 뜻", "단어장 예문"))
+
+    def test_temporary_ai_diagnosis_reports_reasons_without_key_or_saving(self) -> None:
+        """진단(임시, ?quiz-debug): 모델마다 응답 상태, 문제마다 통과 · 떨어진 이유를 돌려주고, 키를 담지 않으며 저장하지 않는다."""
+        scene = self.out["diagnose"]
+        report = scene["report"]
+        self.assertEqual(report["poolCount"], 12)  # 단어장 11 + 첨삭 핵심 표현 1
+        first, second = report["attempts"]
+        self.assertEqual((first["model"], first["httpStatus"]), ("gemini-2.5-flash", 400))
+        self.assertIn("[키]", first["error"])
+        self.assertEqual(second["httpStatus"], 200)
+        reasons = [i["reason"] for i in second["items"]]
+        self.assertIn("정답 보기 「reschedule」 가 대상 표현 「reschedule A for B」 과 다름", reasons[0])
+        self.assertIn("빈칸", reasons[1])
+        self.assertEqual(reasons[2], "통과")
+        self.assertNotIn(scene["KEY"], scene["text"])
+        self.assertTrue(scene["unchanged"])
+        self.assertEqual(scene["noKey"]["status"], "키 없음 또는 금고 잠김")
+        self.assertEqual(scene["noKey"]["attempts"], [])
+
+    def test_unworthy_expressions_are_not_asked(self) -> None:
+        """실제 기기 확인 뒤(저자 판정): 설명문 뜻 · 40자 넘는 뜻 · 두 문장 붙은 표현은 세트에도 보기에도 없다(단독 앱)."""
+        quiz = self.out["unworthy"]["five"]["body"]["quiz"]
+        self.assertEqual(len(quiz["questions"]), 5)
+        bad = {normalize_text(e) for e, _, _ in UNWORTHY} | {normalize_text(m) for _, m, _ in UNWORTHY}
+        for q in quiz["questions"]:
+            self.assertNotIn(normalize_text(q["expression"]), bad)
+            for c in q["choices"]:
+                self.assertNotIn(normalize_text(c), bad)
+        four = self.out["unworthy"]["four"]["body"]
+        self.assertIsNone(four["quiz"])
+        self.assertTrue(four["notEnough"])
+        self.assertEqual(self.out["unworthy"]["rule"], [True, True, True, True, False, False, False, False, False])
 
     def test_q2_four_expressions_do_not_open_and_save_nothing(self) -> None:
         """[Q2] 표현 4개면 열지 않고 안내만, 기기 저장소는 그대로."""
