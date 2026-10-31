@@ -1380,6 +1380,56 @@
     return { questions: [], status: "failed" };
   }
 
+  // 학습 기록 탭 「퀴즈 점수」 — 최근 14일(오늘이 맨 앞)과 최근 7일 평균(푼 날 첫 점수 평균, 0.5 올림)([Q6])
+  // 퀴즈 기록만 읽는다 — 연속 학습일 · 하루 목표와는 무관하다
+  function buildQuizScoreSummary(scores, todayStr) {
+    const byDate = new Map(scores.map((s) => [s.date, s]));
+    const days = [];
+    for (let offset = 0; offset < 14; offset += 1) {
+      const day = addDaysToDateStr(todayStr, -offset);
+      const line = byDate.get(day);
+      days.push({
+        date: day,
+        firstScore: line ? line.firstScore : null,
+        bestScore: line ? line.bestScore : null,
+        attemptCount: line ? line.attemptCount : 0,
+        total: line ? line.total : null,
+      });
+    }
+    const recent = days
+      .slice(0, 7)
+      .map((d) => d.firstScore)
+      .filter((v) => v !== null);
+    const sum = recent.reduce((a, b) => a + b, 0);
+    return {
+      today: todayStr,
+      days,
+      recentAverage: recent.length ? Math.floor((sum * 2 + recent.length) / (recent.length * 2)) : null,
+      recentDays: recent.length,
+    };
+  }
+
+  // 백업 파일의 quiz 칸 검증 — 틀리면 null(백업 전체를 거절하게)([Q8])
+  function validateQuizBackup(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    let today = null;
+    if (raw.today !== null && raw.today !== undefined) {
+      today = validateDailyQuiz(raw.today);
+      if (!today) return null;
+    }
+    if (!Array.isArray(raw.scores)) return null;
+    const scores = [];
+    const seen = new Set();
+    for (const s of raw.scores) {
+      const ok = validateQuizScore(s);
+      if (!ok || seen.has(ok.date)) return null;
+      seen.add(ok.date);
+      scores.push(ok);
+    }
+    scores.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    return { today, scores };
+  }
+
   let quizCreateInFlight = null;
 
   // 오늘 세트 만들기 — AI 는 세트를 만들기 전에 한 번 부르고, 기다린 뒤 저장소를 다시 읽는다.
@@ -1796,6 +1846,11 @@
       return makeJsonResponse(outcome.status, outcome.body);
     }
 
+    // 13) GET /api/quiz/scores — 학습 기록 탭 「퀴즈 점수」([Q6])
+    if (method === "GET" && path === "/api/quiz/scores") {
+      return makeJsonResponse(200, buildQuizScoreSummary(getQuizState().scores, todayStr));
+    }
+
     // 12) POST /api/quiz/attempt — 채점 · 점수 줄 고침. 조건 밖이면 400 이고 저장하지 않는다([Q5] · [Q6])
     if (method === "POST" && path === "/api/quiz/attempt") {
       const req = validateQuizAttempt(bodyObj);
@@ -1861,6 +1916,7 @@
       history: getHistoryRecords(),
       vocab: getVocabItems(),
       routine: getRoutineState(),
+      quiz: getQuizState(),
     };
   }
 
@@ -1876,6 +1932,12 @@
     }
     if (!rawObj.routine || typeof rawObj.routine !== "object") {
       throw new Error("백업 파일에 학습 루틴(routine) 정보가 없습니다.");
+    }
+    // quiz 칸은 있으면 검증한 뒤 바꿔 넣고, 틀리면 백업 전체를 거절한다. 없으면(옛 백업) 기기의 퀴즈 기록을 그대로 둔다([Q8])
+    const hasQuiz = Object.prototype.hasOwnProperty.call(rawObj, "quiz");
+    const quizBackup = hasQuiz ? validateQuizBackup(rawObj.quiz) : null;
+    if (hasQuiz && !quizBackup) {
+      throw new Error("백업 파일의 퀴즈 기록(quiz) 모양이 올바르지 않습니다.");
     }
     const goal = rawObj.routine.goal || {};
     const fbGoal = goal.dailyFeedbackGoal;
@@ -1895,6 +1957,13 @@
       );
     }
 
+    // 퀴즈 기록을 먼저 저장한다 — 실패하면(저장 공간 등) 다른 기록을 바꾸기 전에 멈추고 알린다([Q8])
+    if (quizBackup && !saveQuizState(quizBackup)) {
+      throw new Error(
+        "기기 저장 공간이 모자라 퀴즈 기록을 복원하지 못했습니다. 저장 공간을 비운 뒤 다시 불러와 주세요."
+      );
+    }
+
     saveHistoryRecords(rawObj.history);
     saveVocabItems(rawObj.vocab);
     saveRoutineState({
@@ -1903,10 +1972,10 @@
         ? rawObj.routine.reviewLogs
         : [],
     });
-
     return {
       historyCount: rawObj.history.length,
       vocabCount: rawObj.vocab.length,
+      quizScoreCount: quizBackup ? quizBackup.scores.length : null,
     };
   }
 

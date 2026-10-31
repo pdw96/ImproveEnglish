@@ -41,6 +41,8 @@ from src.quiz_store import QuizStore
 from src.quiz_types import (
     CHOICE_COUNT,
     DailyQuiz,
+    QuizScore,
+    build_score_summary,
     NOT_ENOUGH_MESSAGE,
     QuizQuestion,
     calculate_score,
@@ -715,6 +717,78 @@ class TestQuizAiServer(unittest.TestCase):
         self.assertIn("renderDailyQuizAiWords();", src)
 
 
+class TestQuizScoresServer(unittest.TestCase):
+    """PC 서버 모드 — PR 3: 점수 표 · 7일 평균 · 루틴과 분리(Q6)."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        base = pathlib.Path(self.tmp.name)
+        (base / "vocab.json").write_text(json.dumps(vocab_dicts(11), ensure_ascii=False), encoding="utf-8")
+        (base / "history.json").write_text(json.dumps(HISTORY, ensure_ascii=False), encoding="utf-8")
+        self.quiz_path = base / "quiz.json"
+        self.app = FeedbackApp(
+            store=HistoryStore(base / "history.json"),
+            vocab_store=VocabStore(base / "vocab.json"),
+            routine_store=RoutineStore(base / "routine.json"),
+            quiz_store=QuizStore(self.quiz_path),
+            ai_fn=lambda req: (_ for _ in ()).throw(AssertionError("첨삭 AI 를 부르지 않는다")),
+            quiz_ai_fn=lambda pool, records: AiQuestionsResult([], "no_key"),
+        )
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def play(self, day: date, wrong: int) -> dict:
+        quiz = self.app.handle_post_quiz_today(today=day)[1]["quiz"]
+        answers = [(q["answerIndex"] + 1) % 4 if i < wrong else q["answerIndex"] for i, q in enumerate(quiz["questions"])]
+        status, body = self.app.handle_post_quiz_attempt(
+            json.dumps({"date": quiz["date"], "quizId": quiz["id"], "answers": answers}).encode()
+        )
+        self.assertEqual(status, 200)
+        return body
+
+    def test_q6_fourteen_days_first_best_and_seven_day_average(self) -> None:
+        """[Q6] 최근 14일(오늘이 맨 앞) 날짜별 첫 점수 · 최고 점수 · 푼 횟수, 안 푼 날은 비어 있고, 7일 평균은 푼 날 첫 점수 평균."""
+        today = date(2026, 10, 31)
+        for day, wrong in ((date(2026, 10, 16), 5), (date(2026, 10, 22), 4), (date(2026, 10, 28), 3), (date(2026, 10, 30), 2), (today, 1)):
+            self.play(day, wrong)
+        self.play(today, 0)
+        status, body = self.app.handle_get_quiz_scores(today=today)
+        self.assertEqual(status, 200)
+        self.assertEqual(len(body["days"]), 14)
+        self.assertEqual(body["days"][0]["date"], "2026-10-31")
+        self.assertEqual(body["days"][-1]["date"], "2026-10-18")
+        by_date = {d["date"]: d for d in body["days"]}
+        self.assertEqual(
+            (by_date["2026-10-31"]["firstScore"], by_date["2026-10-31"]["bestScore"], by_date["2026-10-31"]["attemptCount"]),
+            (90, 100, 2),
+        )
+        self.assertEqual(by_date["2026-10-22"]["firstScore"], 60)
+        self.assertEqual((by_date["2026-10-29"]["firstScore"], by_date["2026-10-29"]["attemptCount"]), (None, 0))
+        self.assertNotIn("2026-10-16", by_date)
+        self.assertEqual((body["recentAverage"], body["recentDays"]), (80, 3))
+        saved = {s["date"]: s for s in json.loads(self.quiz_path.read_text(encoding="utf-8"))["scores"]}
+        self.assertEqual(saved["2026-10-31"]["firstScore"], 90)
+        self.assertIn("2026-10-16", saved)
+
+    def test_q6_average_rounding_and_empty(self) -> None:
+        """[Q6] 7일 평균 반올림(0.5 올림) · 푼 날이 없으면 비어 있음."""
+        lines = [QuizScore("2026-10-31", 85, 85, 1, 10), QuizScore("2026-10-30", 90, 90, 1, 10)]
+        self.assertEqual(build_score_summary(lines, date(2026, 10, 31))["recentAverage"], 88)
+        empty = build_score_summary([], date(2026, 10, 31))
+        self.assertEqual((empty["recentAverage"], empty["recentDays"]), (None, 0))
+
+    def test_q6_quiz_does_not_change_routine_summary(self) -> None:
+        """[Q6] 퀴즈만 푼 날 — 연속 학습일 · 그날 공부함 · 진행률(루틴 요약 전체)이 퀴즈 전과 같다."""
+        today = date(2026, 10, 31)
+        _, before = self.app.handle_get_routine(today=today)
+        self.play(today, 1)
+        self.play(today, 0)
+        _, after = self.app.handle_get_routine(today=today)
+        self.assertEqual(after, before)
+        self.assertFalse(next(d for d in after["recentDays"] if d["date"] == "2026-10-31")["studied"])
+
+
 def _run_harness() -> dict:
     proc = subprocess.run(
         [NODE, str(HARNESS)], cwd=REPO_ROOT, capture_output=True, text=True, timeout=120, check=False
@@ -929,6 +1003,49 @@ class TestQuizEngine(unittest.TestCase):
         self.assertEqual(self.out["aiOk"]["save1"]["status"], 200)
         self.assertFalse(self.out["aiOk"]["save1"]["body"]["duplicated"])
         self.assertTrue(self.out["aiOk"]["save2"]["body"]["duplicated"])
+
+    # PR 3 — 점수 표 · 루틴과 분리 · 백업
+    def test_q6_fourteen_days_first_best_and_seven_day_average(self) -> None:
+        """[Q6] 최근 14일 · 첫 점수 · 최고 점수 · 푼 횟수 · 7일 평균(푼 날 첫 점수 평균)."""
+        body = self.out["scores"]["scores"]["body"]
+        self.assertEqual(len(body["days"]), 14)
+        by_date = {d["date"]: d for d in body["days"]}
+        self.assertEqual((by_date["2026-10-31"]["firstScore"], by_date["2026-10-31"]["bestScore"], by_date["2026-10-31"]["attemptCount"]), (90, 100, 2))
+        self.assertEqual(by_date["2026-10-22"]["firstScore"], 60)
+        self.assertEqual((by_date["2026-10-29"]["firstScore"], by_date["2026-10-29"]["attemptCount"]), (None, 0))
+        self.assertNotIn("2026-10-16", by_date)
+        self.assertEqual((body["recentAverage"], body["recentDays"]), (80, 3))
+
+    def test_q6_quiz_does_not_change_routine_summary(self) -> None:
+        """[Q6] 퀴즈를 여러 날 풀어도 루틴 요약(연속 학습일 · 공부한 날 · 진행률)이 그대로다."""
+        self.assertTrue(self.out["scores"]["routineSame"])
+
+    def test_q8_backup_carries_quiz_and_restores(self) -> None:
+        """[Q8] 백업 파일에 quiz 칸(세트 · 점수 목록)이 들어가고, 새 기기에 복원하면 같은 점수 표가 나온다."""
+        self.assertTrue(self.out["scores"]["backupHasQuiz"])
+        self.assertEqual(self.out["scores"]["backupScoreCount"], 5)
+        self.assertEqual(self.out["restore"]["restored"]["quizScoreCount"], 5)
+        self.assertEqual(self.out["restore"]["scores"]["body"], self.out["scores"]["scores"]["body"])
+
+    def test_q8_old_backup_without_quiz_keeps_device_quiz(self) -> None:
+        """[Q8] quiz 칸이 없는 옛 백업은 지금처럼 복원되고 기기의 퀴즈 기록은 그대로다."""
+        self.assertTrue(self.out["oldBackup"]["quizKept"])
+
+    def test_q8_bad_quiz_backup_rejects_whole_file_and_changes_nothing(self) -> None:
+        """[Q8] 틀린 quiz 칸 14꼴 — 백업 전체를 거절하고 기기 저장소(첨삭 · 단어장 포함)를 하나도 바꾸지 않는다."""
+        bad = self.out["badBackup"]
+        self.assertEqual(len(bad), 14)
+        for name, r in bad.items():
+            with self.subTest(form=name):
+                self.assertIsNotNone(r["error"])
+                self.assertTrue(r["unchanged"])
+
+    def test_q8_quiz_save_failure_on_restore_is_not_reported_as_success(self) -> None:
+        """[Q8] 복원 중 퀴즈 기록을 저장하지 못하면(저장 공간) 성공이라 하지 않고 멈추며, 기기 저장소를 하나도 바꾸지 않는다."""
+        scene = self.out["backupSaveFail"]
+        self.assertIsNone(scene["result"])
+        self.assertIn("퀴즈 기록을 복원하지 못했습니다", scene["error"])
+        self.assertTrue(scene["unchanged"])
 
     def test_corrupt_quiz_storage_is_treated_as_no_set(self) -> None:
         """망가진 퀴즈 저장 값은 세트 없음으로 보고 새로 만든다."""
