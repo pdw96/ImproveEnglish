@@ -1040,6 +1040,13 @@ class TestQuizEngine(unittest.TestCase):
                 self.assertIsNotNone(r["error"])
                 self.assertTrue(r["unchanged"])
 
+    def test_q8_quiz_save_failure_on_restore_is_not_reported_as_success(self) -> None:
+        """[Q8] 복원 중 퀴즈 기록을 저장하지 못하면(저장 공간) 성공이라 하지 않고 멈추며, 기기 저장소를 하나도 바꾸지 않는다."""
+        scene = self.out["backupSaveFail"]
+        self.assertIsNone(scene["result"])
+        self.assertIn("퀴즈 기록을 복원하지 못했습니다", scene["error"])
+        self.assertTrue(scene["unchanged"])
+
     def test_corrupt_quiz_storage_is_treated_as_no_set(self) -> None:
         """망가진 퀴즈 저장 값은 세트 없음으로 보고 새로 만든다."""
         self.assertIsNone(self.out["corrupt"]["getRes"]["body"]["quiz"])

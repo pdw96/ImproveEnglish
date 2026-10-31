@@ -572,6 +572,22 @@ async function playDay(w, clock, iso, wrong) {
     todayBadQuestion: { today: { ...goodToday, questions: goodToday.questions.map((x, i) => (i === 0 ? { ...x, answerIndex: 4 } : x)) }, scores: [] },
     todayTooFew: { today: { ...goodToday, questions: goodToday.questions.slice(0, 4) }, scores: [] },
   };
+  // 퀴즈 기록 저장이 실패하는 기기 — 복원을 멈추고 알리며, 첨삭 · 단어장 · 루틴 · 퀴즈 어느 것도 바꾸지 않는다
+  {
+    const target = openWindow(w.ctx.localStorage.dump(), clock);
+    const before = JSON.stringify(target.ctx.localStorage.dump());
+    target.ctx.localStorage.failKey = QUIZ_KEY;
+    let error = null;
+    let result = null;
+    try {
+      result = target.ctx.ImproveEnglishStandalone.importBackupPayload({ ...backup, history: [], vocab: [] });
+    } catch (e) {
+      error = String(e.message || e);
+    }
+    target.ctx.localStorage.failKey = null;
+    out.backupSaveFail = { error, result, unchanged: JSON.stringify(target.ctx.localStorage.dump()) === before };
+  }
+
   out.badBackup = {};
   for (const [name, quiz] of Object.entries(badForms)) {
     const target = openWindow(w.ctx.localStorage.dump(), clock);

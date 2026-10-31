@@ -1957,6 +1957,13 @@
       );
     }
 
+    // 퀴즈 기록을 먼저 저장한다 — 실패하면(저장 공간 등) 다른 기록을 바꾸기 전에 멈추고 알린다([Q8])
+    if (quizBackup && !saveQuizState(quizBackup)) {
+      throw new Error(
+        "기기 저장 공간이 모자라 퀴즈 기록을 복원하지 못했습니다. 저장 공간을 비운 뒤 다시 불러와 주세요."
+      );
+    }
+
     saveHistoryRecords(rawObj.history);
     saveVocabItems(rawObj.vocab);
     saveRoutineState({
@@ -1965,10 +1972,6 @@
         ? rawObj.routine.reviewLogs
         : [],
     });
-    if (quizBackup) {
-      saveQuizState(quizBackup);
-    }
-
     return {
       historyCount: rawObj.history.length,
       vocabCount: rawObj.vocab.length,
