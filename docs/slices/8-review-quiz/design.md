@@ -279,3 +279,30 @@ Codex 리뷰 2회차(`06e02d7`)가 「단독 앱에서 AI 를 기다리는 사�
 |---|---|---|
 | PR 4 | 닫기 전 감사 고침(NC-9 ~ NC-13), 어색한 표현 걸러 내기, `?quiz-debug` 임시 진단, `tests/test_quiz.py` 의 걸러 내기 · 진단 시험 | Q1 · Q8(감사 고침) |
 | PR 5 | 진단으로 본 원인에 맞춘 AI 새 문제 고침 · 임시 진단 빼기 · 「닫으며」 | Q1(AI 부분) · Q9 |
+
+## 2026-10-31 — 임시 진단으로 본 원인: 폰 앱의 옛 모델 · 크레딧 소진
+
+PR 4 머지 뒤 저자가 폰(단독 앱, 금고를 푼 실제 키)에서 `?quiz-debug` [AI 진단(임시)] 을 눌러 받은 결과다. 위의 항목은 고치지 않는다.
+
+- **표현 모음** — 4개(「reschedule A for B」 · 「push back」 · 「I was wondering if ~」 · 「Just to let you know」). 걸러 내기 뒤라 AI 없이는
+  다음 세트가 5문제를 채우지 못해 열리지 않는다([Q2]). AI 가 되면 AI 3 + 내 기록 4 로 열린다.
+- **응답** — `gemini-2.5-flash` → HTTP 404 「This model … is no longer available to new users. Please update your code to use
+  models/gemini-3.8-flash …」, `gemini-flash-latest` → HTTP 402 「Your prepayment credits are depleted …」(RESOURCE_EXHAUSTED).
+  응답 검사까지 가지 못했다 — 앞 절의 「응답 검사 탈락」 추정은 틀렸다.
+- **원인 1 (코드)** — 단독 앱 엔진이 첨삭 · 퀴즈 모두 옛 모델 후보 `gemini-2.5-flash` → `gemini-flash-latest` 를 썼다. 서버(`src/gemini.py`
+  `FALLBACK_MODELS`)는 조각 ai-feedback 의 고침(`be0f3f4`)으로 `gemini-3.8-flash` → `gemini-flash-latest` → `gemini-2.5-flash` 인데, 조각
+  standalone-mobile-app 의 엔진은 그대로였고 조각 review-quiz 가 그 목록을 베꼈다. 폰의 첨삭도 같은 이유로 AI 대신 내장 스마트 코치로 답했을
+  공산이 크다(첨삭 노트의 「…: Drop off my luggage.」 같은 표현이 스마트 코치 꼴이다).
+  - **판정 (저자, 2026-10-31)** — 퀴즈 · 첨삭 둘 다 고친다. 대안: 퀴즈만 고치고 첨삭은 조각 ai-provider-choice 에서.
+  - **고침(PR 5)** — 엔진에 `GEMINI_FALLBACK_MODELS`(서버와 같은 셋, 같은 순서)를 두고 첨삭 · 퀴즈가 함께 쓴다. 첨삭은 모델 후보 줄만
+    바뀌고 지시문 · 스키마(앵커볼트)는 그대로다. 단독 앱은 여전히 응답이 실패하면(404 · 402 · 그 밖) 다음 후보로 넘어간다 — 「한 세트에
+    한 번」의 요청 묶음은 이제 최대 세 번 보낸다(앞의 「최대 두 번」을 고친다).
+- **원인 2 (저자 계정)** — 402 는 저자 Google AI Studio 프로젝트의 선불 크레딧이 바닥난 것이다. 코드로 고칠 수 없다. 크레딧을 채우거나
+  크레딧이 있는(또는 무료 등급) 프로젝트의 키로 바꾸기 전에는 모델을 고쳐도 AI 새 문제 · AI 첨삭이 나오지 않는다.
+- **임시 진단은 뺀다** — 원인을 정했으므로 `?quiz-debug` 단추 · 결과 상자 · 엔진 `diagnoseQuizAi` 와 그 시험을 뺀다.
+- **닫으며로 넘기는 것** — 「다음 날 새 세트」(2026-11-01)와, 크레딧을 채운 뒤 AI 새 문제가 실제로 섞이는지는 저자 기기 확인으로 본다.
+
+| PR | 담는 것 | 닫는 것 |
+|---|---|---|
+| PR 5 | 단독 앱 모델 후보를 서버와 같게(첨삭 · 퀴즈), 임시 진단 빼기, `tests/test_quiz.py` 의 모델 순서 시험 | Q1(AI 부분) · Q9 |
+| PR 6 | 저자 기기 재확인(다음 날 새 세트 · AI 새 문제) 결과와 「닫으며」 | — |

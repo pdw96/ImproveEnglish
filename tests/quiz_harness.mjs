@@ -363,31 +363,33 @@ async function aiScene({ items, key = KEY, status = 200, local: extra = {}, resp
   return { w, first, second, aiCalls };
 }
 
-// 진단(임시, ?quiz-debug) — 모델마다 상태, 문제마다 통과 · 떨어진 이유. 저장하지 않고 키를 담지 않는다
+// 모델 후보(실제 기기 진단 뒤) — 서버와 같은 순서로 부른다. 첫 모델 404 · 둘째 402 여도 셋째가 되면 AI 문제가 들어온다.
+// 첨삭도 같은 후보를 같은 순서로 쓴다
 {
+  const urls = [];
+  const { first } = await aiScene({
+    items: [aiItem("put up with"), aiItem("cut down on"), aiItem("kick off")],
+    responder: async (url) => {
+      urls.push(url);
+      if (url.includes("gemini-3.8-flash")) return new Response('{"error":{"code":404}}', { status: 404 });
+      if (url.includes("gemini-flash-latest")) return new Response('{"error":{"code":402}}', { status: 402 });
+      return geminiReply([aiItem("put up with"), aiItem("cut down on"), aiItem("kick off")]);
+    },
+  });
   const clock = makeClock("2026-10-30T09:00:00");
-  const local = { ...device(11, true), ie_gemini_api_key: KEY };
-  const w = openWindow(local, clock);
-  let n = 0;
-  w.ctx.aiResponder = async () => {
-    n += 1;
-    // 첫 모델: 오류 본문에 키가 섞여 와도 진단은 키를 가린다. 둘째 모델: 셋 중 둘이 떨어지고 하나 통과
-    if (n === 1) return new Response(`{"error":{"code":400,"message":"bad ${KEY}"}}`, { status: 400 });
-    return geminiReply([
-      aiItem("reschedule A for B", { choices: ["reschedule", "take after", "look into", "run out of"] }),
-      aiItem("kick off", { question: "We will kick off soon." }),
-      aiItem("put up with"),
-    ]);
+  const fw = openWindow({ ie_gemini_api_key: KEY }, clock);
+  const feedbackUrls = [];
+  fw.ctx.aiResponder = async (url) => {
+    feedbackUrls.push(url);
+    return new Response('{"error":{"code":404}}', { status: 404 });
   };
-  const before = JSON.stringify(w.ctx.localStorage.dump());
-  const report = await w.ctx.ImproveEnglishStandalone.diagnoseQuizAi();
-  const noKey = openWindow(device(11, true), clock);
-  out.diagnose = {
-    report,
-    text: JSON.stringify(report),
-    unchanged: JSON.stringify(w.ctx.localStorage.dump()) === before,
-    noKey: await noKey.ctx.ImproveEnglishStandalone.diagnoseQuizAi(),
-    KEY,
+  const fb = await call(fw, "POST", "/api/feedback", { text: "I am agree with you.", inputMode: "text" });
+  out.models = {
+    quizUrls: urls,
+    quizAiCount: first.body.quiz.questions.filter((q) => q.source === "ai").length,
+    quizNotice: first.body.aiNotice || null,
+    feedbackUrls,
+    feedbackStatus: fb.status,
   };
 }
 

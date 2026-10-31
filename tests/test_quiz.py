@@ -886,23 +886,23 @@ class TestQuizEngine(unittest.TestCase):
         self.assertEqual(len(qs), 1)
         self.assertEqual((qs[0]["meaning"], qs[0]["example"]), ("단어장에 적은 뜻", "단어장 예문"))
 
-    def test_temporary_ai_diagnosis_reports_reasons_without_key_or_saving(self) -> None:
-        """진단(임시, ?quiz-debug): 모델마다 응답 상태, 문제마다 통과 · 떨어진 이유를 돌려주고, 키를 담지 않으며 저장하지 않는다."""
-        scene = self.out["diagnose"]
-        report = scene["report"]
-        self.assertEqual(report["poolCount"], 12)  # 단어장 11 + 첨삭 핵심 표현 1
-        first, second = report["attempts"]
-        self.assertEqual((first["model"], first["httpStatus"]), ("gemini-2.5-flash", 400))
-        self.assertIn("[키]", first["error"])
-        self.assertEqual(second["httpStatus"], 200)
-        reasons = [i["reason"] for i in second["items"]]
-        self.assertIn("정답 보기 「reschedule」 가 대상 표현 「reschedule A for B」 과 다름", reasons[0])
-        self.assertIn("빈칸", reasons[1])
-        self.assertEqual(reasons[2], "통과")
-        self.assertNotIn(scene["KEY"], scene["text"])
-        self.assertTrue(scene["unchanged"])
-        self.assertEqual(scene["noKey"]["status"], "키 없음 또는 금고 잠김")
-        self.assertEqual(scene["noKey"]["attempts"], [])
+    def test_gemini_models_follow_server_order_for_quiz_and_feedback(self) -> None:
+        """실제 기기 진단 뒤(저자 판정 「퀴즈 · 첨삭 둘 다」): 단독 앱도 서버 FALLBACK_MODELS 순서로 부른다.
+
+        첫 모델이 404(새 계정에서 사라진 모델) · 둘째가 402 여도 셋째가 되면 AI 새 문제 3개가 들어오고, 첨삭도 같은 순서로 부른다.
+        """
+        models = list(gemini_module.FALLBACK_MODELS)
+        self.assertEqual(models[0], "gemini-3.8-flash")
+        scene = self.out["models"]
+        self.assertEqual([m for m in models for u in scene["quizUrls"] if f"/models/{m}:" in u], models)
+        self.assertEqual(scene["quizAiCount"], 3)
+        self.assertIsNone(scene["quizNotice"])
+        self.assertEqual([m for m in models for u in scene["feedbackUrls"] if f"/models/{m}:" in u], models)
+        self.assertEqual(scene["feedbackStatus"], 200)
+        src = ENGINE_JS.read_text(encoding="utf-8")
+        engine_models = re.search(r"const GEMINI_FALLBACK_MODELS = \[([^\]]*)\]", src).group(1)
+        self.assertEqual(re.findall(r'"([^"]+)"', engine_models), models)
+        self.assertNotIn('const models = ["gemini-2.5-flash"', src)
 
     def test_unworthy_expressions_are_not_asked(self) -> None:
         """실제 기기 확인 뒤(저자 판정): 설명문 뜻 · 40자 넘는 뜻 · 두 문장 붙은 표현은 세트에도 보기에도 없다(단독 앱)."""
@@ -1055,7 +1055,11 @@ class TestQuizEngine(unittest.TestCase):
     def test_q9_failed_no_key_locked_fill_with_mine_and_notice(self) -> None:
         """[Q9] 호출 실패 · 키 없음 · 금고 잠김 — 내 기록으로 10문제와 안내, 키 없음 · 잠김이면 부르지 않음, 안내에 키 없음."""
         failed, no_key, locked = self.out["aiFailed"], self.out["aiNoKey"], self.out["aiLocked"]
-        self.assertEqual((failed["total"], failed["aiNotice"], failed["aiCalls"]), (10, AI_NOTICE_FAILED, 2))
+        # 모델 후보마다 한 번씩(실제 기기 진단 뒤 서버와 같은 셋) — 다 실패해야 내 기록으로 채운다
+        self.assertEqual(
+            (failed["total"], failed["aiNotice"], failed["aiCalls"]),
+            (10, AI_NOTICE_FAILED, len(gemini_module.FALLBACK_MODELS)),
+        )
         self.assertNotIn(failed["KEY"], failed["bodyText"])
         for scene in (no_key, locked):
             self.assertEqual((scene["total"], scene["aiNotice"], scene["aiCalls"]), (10, AI_NOTICE_NO_KEY, 0))
