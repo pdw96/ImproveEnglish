@@ -51,7 +51,8 @@ function makeClock(isoLocal) {
 function openWindow(local, clock) {
   const calls = [];
   const ctx = {
-    localStorage: new FakeStorage(local),
+    // FakeStorage 를 그대로 넘기면 같은 기기의 다른 탭이다(저장소를 나눠 씀)
+    localStorage: local instanceof FakeStorage ? local : new FakeStorage(local),
     sessionStorage: new FakeStorage({}),
     crypto: globalThis.crypto,
     TextEncoder,
@@ -409,6 +410,58 @@ async function aiScene({ items, key = KEY, status = 200, local: extra = {}, resp
     ai: garbled.first.body.quiz.questions.filter((x) => x.source === "ai").length,
     total: garbled.first.body.quiz.questions.length,
     aiNotice: garbled.first.body.aiNotice || null,
+  };
+}
+
+// 겹친 [퀴즈 시작] — 같은 화면이면 만들기 하나를 함께 기다려 AI 한 번 · 세트 하나([Q4] · [Q9])
+{
+  const clock = makeClock("2026-10-30T09:00:00");
+  const local = device(11, true);
+  local.ie_gemini_api_key = KEY;
+  const w = openWindow(local, clock);
+  w.ctx.aiResponder = async () => {
+    await new Promise((r) => setTimeout(r, 50));
+    return geminiReply([aiItem("put up with")]);
+  };
+  const [a, b] = await Promise.all([call(w, "POST", "/api/quiz/today"), call(w, "POST", "/api/quiz/today")]);
+  const stored = JSON.parse(w.ctx.localStorage.getItem(QUIZ_KEY)).today.id;
+  out.concurrentSameTab = {
+    sameSet: a.body.quiz.id === b.body.quiz.id,
+    storedIsThatSet: stored === a.body.quiz.id,
+    aiCalls: w.calls.filter((c) => c.url.includes("generativelanguage")).length,
+  };
+}
+
+// 두 탭 — 탭 A 가 AI 를 기다리는 사이 탭 B 가 세트를 만들고 점수까지 냈다. A 는 B 의 세트를 돌려받고 점수를 덮지 않는다([Q4] · [Q6])
+{
+  const clock = makeClock("2026-10-30T09:00:00");
+  const local = device(11, true);
+  local.ie_gemini_api_key = KEY;
+  const shared = new FakeStorage(local);
+  const tabA = openWindow(shared, clock);
+  const tabB = openWindow(shared, clock);
+  let release;
+  const gate = new Promise((r) => {
+    release = r;
+  });
+  tabA.ctx.aiResponder = async () => {
+    await gate;
+    return geminiReply([aiItem("put up with")]);
+  };
+  tabB.ctx.aiResponder = async () => new Response("{}", { status: 500 });
+  const pendingA = call(tabA, "POST", "/api/quiz/today");
+  await new Promise((r) => setTimeout(r, 20));
+  const bQuiz = (await call(tabB, "POST", "/api/quiz/today")).body.quiz;
+  const bAttempt = await call(tabB, "POST", "/api/quiz/attempt", { date: bQuiz.date, quizId: bQuiz.id, answers: bQuiz.questions.map((q) => q.answerIndex) });
+  release();
+  const aRes = await pendingA;
+  const after = JSON.parse(shared.getItem(QUIZ_KEY));
+  out.concurrentTwoTabs = {
+    bAttemptStatus: bAttempt.status,
+    aCreated: aRes.body.created,
+    aGotBSet: aRes.body.quiz.id === bQuiz.id,
+    storedIsBSet: after.today.id === bQuiz.id,
+    scoresKept: after.scores.length === 1 && after.scores[0].firstScore === 100,
   };
 }
 

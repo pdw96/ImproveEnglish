@@ -1380,6 +1380,43 @@
     return { questions: [], status: "failed" };
   }
 
+  let quizCreateInFlight = null;
+
+  // 오늘 세트 만들기 — AI 는 세트를 만들기 전에 한 번 부르고, 기다린 뒤 저장소를 다시 읽는다.
+  // 그사이 다른 탭이 오늘 세트를 저장했으면 그것을 돌려주고 덮어쓰지 않으며, 저장은 다시 읽은 점수 위에 한다([Q4] · [Q6])
+  async function createTodayQuiz(todayStr, rawFetch) {
+    const aiPool = buildExpressionPool(getVocabItems(), getHistoryRecords(), todayStr);
+    const aiResult = await callQuizAi(aiPool, getHistoryRecords(), rawFetch);
+    const fresh = getQuizState();
+    const freshScore = fresh.scores.find((s) => s.date === todayStr) || null;
+    if (fresh.today && fresh.today.date === todayStr) {
+      return {
+        status: 200,
+        body: { today: todayStr, quiz: fresh.today, created: false, score: freshScore },
+      };
+    }
+    const made = buildDailyQuiz(todayStr, aiResult.questions);
+    if (!made) {
+      return {
+        status: 200,
+        body: { today: todayStr, quiz: null, notEnough: true, message: QUIZ_NOT_ENOUGH_MESSAGE, score: null },
+      };
+    }
+    if (!saveQuizState({ today: made, scores: fresh.scores })) {
+      return { status: 500, body: { error: QUIZ_SAVE_FAILED_MESSAGE, saveFailed: true } };
+    }
+    const body = {
+      today: todayStr,
+      quiz: made,
+      created: true,
+      score: freshScore,
+      aiCount: made.questions.filter((q) => q.source === "ai").length,
+    };
+    const aiNotice = quizAiNotice(aiResult);
+    if (aiNotice) body.aiNotice = aiNotice;
+    return { status: 200, body };
+  }
+
   function makeJsonResponse(status, payload) {
     return new Response(JSON.stringify(payload), {
       status,
@@ -1741,32 +1778,15 @@
           score,
         });
       }
-      // AI 는 오늘 세트가 없을 때만, 세트를 만들기 전에 한 번 부른다([Q4] · [Q9])
-      const aiPool = buildExpressionPool(getVocabItems(), getHistoryRecords(), todayStr);
-      const aiResult = await callQuizAi(aiPool, getHistoryRecords(), rawFetch);
-      const made = buildDailyQuiz(todayStr, aiResult.questions);
-      if (!made) {
-        return makeJsonResponse(200, {
-          today: todayStr,
-          quiz: null,
-          notEnough: true,
-          message: QUIZ_NOT_ENOUGH_MESSAGE,
-          score: null,
+      // 같은 화면에서 겹친 [퀴즈 시작] 은 진행 중인 만들기 하나를 함께 기다린다 — AI 도 한 번만([Q4] · [Q9])
+      if (!quizCreateInFlight || quizCreateInFlight.date !== todayStr) {
+        const promise = createTodayQuiz(todayStr, rawFetch).finally(() => {
+          if (quizCreateInFlight && quizCreateInFlight.promise === promise) quizCreateInFlight = null;
         });
+        quizCreateInFlight = { date: todayStr, promise };
       }
-      if (!saveQuizState({ today: made, scores: state.scores })) {
-        return makeJsonResponse(500, { error: QUIZ_SAVE_FAILED_MESSAGE, saveFailed: true });
-      }
-      const createdBody = {
-        today: todayStr,
-        quiz: made,
-        created: true,
-        score,
-        aiCount: made.questions.filter((q) => q.source === "ai").length,
-      };
-      const aiNotice = quizAiNotice(aiResult);
-      if (aiNotice) createdBody.aiNotice = aiNotice;
-      return makeJsonResponse(200, createdBody);
+      const outcome = await quizCreateInFlight.promise;
+      return makeJsonResponse(outcome.status, outcome.body);
     }
 
     // 12) POST /api/quiz/attempt — 채점 · 점수 줄 고침. 조건 밖이면 400 이고 저장하지 않는다([Q5] · [Q6])

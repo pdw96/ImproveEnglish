@@ -590,6 +590,32 @@ class TestQuizAiServer(unittest.TestCase):
                 self.assertNotIn("aiNotice", second)
                 self.assertEqual(self.ai_calls, 1)
 
+    def test_q4_concurrent_starts_call_ai_once_and_share_one_set(self) -> None:
+        """[Q4] · [Q9] 겹친 [퀴즈 시작](서버는 요청마다 스레드) — AI 는 한 번, 세트는 하나, 새로 만든 응답은 하나."""
+        import threading
+        import time
+
+        self.ai_result = AiQuestionsResult(self.parsed([ai_item("put up with")]), "ok")
+
+        def slow_ai(pool, records):
+            self.ai_calls += 1
+            time.sleep(0.2)
+            return self.ai_result
+
+        self.app._quiz_ai_fn = slow_ai
+        results: list[dict] = []
+        threads = [
+            threading.Thread(target=lambda: results.append(self.app.handle_post_quiz_today(today=DAY1)[1]))
+            for _ in range(3)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(self.ai_calls, 1)
+        self.assertEqual(len({r["quiz"]["id"] for r in results}), 1)
+        self.assertEqual(sum(1 for r in results if r["created"]), 1)
+
     def test_q9_key_only_in_header_and_quiz_prompt_not_feedback_prompt(self) -> None:
         """[Q9] 키는 x-goog-api-key 헤더로만(주소에 없음), 요청은 퀴즈 전용 지시문 · 온도 0.7 · 배운 표현 최대 10개 · 교정 문장."""
         seen = {}
@@ -857,6 +883,17 @@ class TestQuizEngine(unittest.TestCase):
                 self.assertEqual(kept, 1)
         self.assertEqual(more, 3)
         self.assertEqual(unparsable, {"ai": 0, "total": 10, "aiNotice": AI_NOTICE_FAILED})
+
+    def test_q4_concurrent_starts_same_tab_share_one_set(self) -> None:
+        """[Q4] · [Q9] 같은 화면에서 겹친 [퀴즈 시작] — 만들기 하나를 함께 기다려 AI 한 번 · 세트 하나."""
+        scene = self.out["concurrentSameTab"]
+        self.assertEqual(scene, {"sameSet": True, "storedIsThatSet": True, "aiCalls": 1})
+
+    def test_q4_two_tabs_late_start_does_not_overwrite_set_or_scores(self) -> None:
+        """[Q4] · [Q6] 두 탭 — A 가 AI 를 기다리는 사이 B 가 세트를 만들고 점수를 냈으면, A 는 B 의 세트를 돌려받고 점수를 덮지 않는다."""
+        scene = self.out["concurrentTwoTabs"]
+        self.assertEqual(scene, {"bAttemptStatus": 200, "aCreated": False, "aGotBSet": True,
+                                 "storedIsBSet": True, "scoresKept": True})
 
     def test_q7_ai_expression_saves_to_vocab_and_reports_duplicate(self) -> None:
         """[Q7] AI 문제의 표현 · 뜻 · 예문으로 단어장 추가 — 처음 담고, 다시 누르면 이미 있음."""
