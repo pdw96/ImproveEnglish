@@ -290,7 +290,7 @@ class FeedbackApp:
         AI 는 오늘 세트가 없을 때만, 세트를 만들기 전에 한 번 부른다 — 같은 날 다시 불러도 · [다시 풀기] 도 부르지 않는다.
         """
         base_today = today or date.today()
-        existing, existing_score = self.quiz_store.get_today_state(base_today)
+        existing, existing_score = self.quiz_store.current_set(base_today)
         if existing is not None:
             return HTTPStatus.OK, {
                 "today": base_today.isoformat(),
@@ -301,7 +301,7 @@ class FeedbackApp:
 
         with self._quiz_create_lock:
             # 잠금을 기다리는 사이 다른 요청이 오늘 세트를 만들었으면 그것을 돌려준다 — AI 를 부르지 않는다
-            existing, existing_score = self.quiz_store.get_today_state(base_today)
+            existing, existing_score = self.quiz_store.current_set(base_today)
             if existing is not None:
                 return HTTPStatus.OK, {
                     "today": base_today.isoformat(),

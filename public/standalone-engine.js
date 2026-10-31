@@ -1389,10 +1389,16 @@
     const aiResult = await callQuizAi(aiPool, getHistoryRecords(), rawFetch);
     const fresh = getQuizState();
     const freshScore = fresh.scores.find((s) => s.date === todayStr) || null;
-    if (fresh.today && fresh.today.date === todayStr) {
+    // 기다리는 사이 오늘 세트나 더 새 날짜(자정을 넘겨 다른 탭이 만든)의 세트가 저장됐으면 그것을 돌려주고 덮지 않는다
+    if (fresh.today && fresh.today.date >= todayStr) {
       return {
         status: 200,
-        body: { today: todayStr, quiz: fresh.today, created: false, score: freshScore },
+        body: {
+          today: todayStr,
+          quiz: fresh.today,
+          created: false,
+          score: fresh.scores.find((s) => s.date === fresh.today.date) || null,
+        },
       };
     }
     const made = buildDailyQuiz(todayStr, aiResult.questions);
@@ -1770,12 +1776,13 @@
     if (method === "POST" && path === "/api/quiz/today") {
       const state = getQuizState();
       const score = state.scores.find((s) => s.date === todayStr) || null;
-      if (state.today && state.today.date === todayStr) {
+      // 저장된 세트가 오늘이거나 더 새 날짜면 그대로 — 오래된 날짜로 덮지 않는다(PR 2 2회차 경계)
+      if (state.today && state.today.date >= todayStr) {
         return makeJsonResponse(200, {
           today: todayStr,
           quiz: state.today,
           created: false,
-          score,
+          score: state.scores.find((s) => s.date === state.today.date) || null,
         });
       }
       // 같은 화면에서 겹친 [퀴즈 시작] 은 진행 중인 만들기 하나를 함께 기다린다 — AI 도 한 번만([Q4] · [Q9])

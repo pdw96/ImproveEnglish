@@ -616,6 +616,26 @@ class TestQuizAiServer(unittest.TestCase):
         self.assertEqual(len({r["quiz"]["id"] for r in results}), 1)
         self.assertEqual(sum(1 for r in results if r["created"]), 1)
 
+    def test_q4_older_date_start_never_overwrites_newer_set(self) -> None:
+        """[Q4] 경계(PR 2 2회차) — 저장된 세트보다 오래된 날짜의 [퀴즈 시작](자정 무렵 늦은 요청)은 새 세트를 덮지 않고 AI 도 부르지 않는다."""
+        _, newer = self.app.handle_post_quiz_today(today=DAY2)
+        self.assertTrue(newer["created"])
+        before = self.app.quiz_store.file_path.read_text(encoding="utf-8")
+        calls_before = self.ai_calls
+        status, older = self.app.handle_post_quiz_today(today=DAY1)
+        self.assertEqual(status, 200)
+        self.assertFalse(older["created"])
+        self.assertEqual(older["quiz"]["id"], newer["quiz"]["id"])
+        self.assertEqual(older["quiz"]["date"], DAY2.isoformat())
+        self.assertEqual(self.ai_calls, calls_before)
+        self.assertEqual(self.app.quiz_store.file_path.read_text(encoding="utf-8"), before)
+
+        def must_not_build():
+            raise AssertionError("새 세트가 있으면 만들지 않는다")
+
+        quiz, created = self.app.quiz_store.get_or_create(DAY1, must_not_build)
+        self.assertEqual((quiz.id, created), (newer["quiz"]["id"], False))
+
     def test_q9_key_only_in_header_and_quiz_prompt_not_feedback_prompt(self) -> None:
         """[Q9] 키는 x-goog-api-key 헤더로만(주소에 없음), 요청은 퀴즈 전용 지시문 · 온도 0.7 · 배운 표현 최대 10개 · 교정 문장."""
         seen = {}
@@ -894,6 +914,15 @@ class TestQuizEngine(unittest.TestCase):
         scene = self.out["concurrentTwoTabs"]
         self.assertEqual(scene, {"bAttemptStatus": 200, "aCreated": False, "aGotBSet": True,
                                  "storedIsBSet": True, "scoresKept": True})
+
+    def test_q4_midnight_late_start_does_not_overwrite_next_day_set(self) -> None:
+        """[Q4] 경계(PR 2 2회차) — 자정을 넘겨 끝난 늦은 시작 · 시계가 늦은 탭의 시작은 다음 날 세트를 덮지 않고, 그 세트의 답안은 받아진다."""
+        self.assertEqual(self.out["midnight"], {
+            "bDate": "2026-10-31", "storedDate": "2026-10-31", "storedIsBSet": True,
+            "aCreated": False, "aGotBSet": True, "bAttemptStatus": 200,
+            "olderClockCreated": False, "olderClockGotBSet": True, "olderClockAiCalls": 0,
+            "storedAfterOlderClock": True,
+        })
 
     def test_q7_ai_expression_saves_to_vocab_and_reports_duplicate(self) -> None:
         """[Q7] AI 문제의 표현 · 뜻 · 예문으로 단어장 추가 — 처음 담고, 다시 누르면 이미 있음."""

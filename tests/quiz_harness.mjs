@@ -465,4 +465,48 @@ async function aiScene({ items, key = KEY, status = 200, local: extra = {}, resp
   };
 }
 
+// 자정을 넘긴 늦은 시작 — 탭 A 가 10/30 23:59 에 시작해 AI 를 기다리는 사이 날짜가 넘어가고 탭 B 가 10/31 세트를 만들었다.
+// A 는 10/30 세트로 덮지 않고 10/31 세트를 돌려받으며, B 의 10/31 답안은 그대로 받아진다(PR 2 2회차 경계)
+{
+  const clock = makeClock("2026-10-30T23:59:50");
+  const local = device(11, true);
+  local.ie_gemini_api_key = KEY;
+  const shared = new FakeStorage(local);
+  const tabA = openWindow(shared, clock);
+  const tabB = openWindow(shared, clock);
+  let release;
+  const gate = new Promise((r) => {
+    release = r;
+  });
+  tabA.ctx.aiResponder = async () => {
+    await gate;
+    return geminiReply([aiItem("put up with")]);
+  };
+  tabB.ctx.aiResponder = async () => new Response("{}", { status: 500 });
+  const pendingA = call(tabA, "POST", "/api/quiz/today");
+  await new Promise((r) => setTimeout(r, 20));
+  clock.set("2026-10-31T00:00:10");
+  const bQuiz = (await call(tabB, "POST", "/api/quiz/today")).body.quiz;
+  release();
+  const aRes = await pendingA;
+  const stored = JSON.parse(shared.getItem(QUIZ_KEY)).today;
+  const bAttempt = await call(tabB, "POST", "/api/quiz/attempt", { date: bQuiz.date, quizId: bQuiz.id, answers: bQuiz.questions.map((q) => q.answerIndex) });
+  // 기기 시계가 하루 늦은 탭이 [퀴즈 시작] 을 눌러도 새 세트를 덮지 않는다
+  clock.set("2026-10-30T12:00:00");
+  const tabC = openWindow(shared, clock);
+  const cRes = await call(tabC, "POST", "/api/quiz/today");
+  out.midnight = {
+    bDate: bQuiz.date,
+    storedDate: stored.date,
+    storedIsBSet: stored.id === bQuiz.id,
+    aCreated: aRes.body.created,
+    aGotBSet: aRes.body.quiz.id === bQuiz.id,
+    bAttemptStatus: bAttempt.status,
+    olderClockCreated: cRes.body.created,
+    olderClockGotBSet: cRes.body.quiz.id === bQuiz.id,
+    olderClockAiCalls: tabC.calls.filter((c) => c.url.includes("generativelanguage")).length,
+    storedAfterOlderClock: JSON.parse(shared.getItem(QUIZ_KEY)).today.id === bQuiz.id,
+  };
+}
+
 process.stdout.write(JSON.stringify(out));
