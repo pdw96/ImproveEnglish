@@ -1546,6 +1546,57 @@ input[type="password"]:focus {
 }
 
 /* 조각 8: 오늘의 퀴즈 카드 */
+.daily-quiz-ai-words {
+  margin-top: 1rem;
+}
+
+.daily-quiz-ai-words-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.daily-quiz-ai-word-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.daily-quiz-ai-word {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.daily-quiz-ai-word-text strong {
+  color: var(--text);
+}
+
+.daily-quiz-ai-word-meaning {
+  color: var(--muted);
+}
+
+.daily-quiz-ai-word-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.daily-quiz-ai-word-status {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .daily-quiz-notice {
   margin: 0 0 0.85rem;
   padding: 0.6rem 0.8rem;

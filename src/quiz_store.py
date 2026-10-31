@@ -45,14 +45,28 @@ class QuizStore:
         today_score = next((s for s in scores if s.date == today_str), None)
         return today_quiz, today_score
 
+    def current_set(self, today: date) -> tuple[DailyQuiz | None, QuizScore | None]:
+        """저장된 세트가 오늘이거나 그보다 새 날짜면 그 세트와 그 날짜의 점수 줄. 아니면 (None, None).
+
+        새 날짜의 세트가 있다는 것은 다른 요청이 날짜를 넘긴 뒤 먼저 만들었다는 뜻이다 — 오래된 날짜로 덮지 않는다(PR 2 2회차 경계).
+        """
+        with self._lock:
+            quiz, scores = self._read_state_unlocked()
+        if quiz is None or quiz.date < today.isoformat():
+            return None, None
+        return quiz, next((s for s in scores if s.date == quiz.date), None)
+
     def get_or_create(
         self, today: date, factory: Callable[[], DailyQuiz | None]
     ) -> tuple[DailyQuiz | None, bool]:
-        """오늘 세트가 있으면 그것을, 없으면 factory 로 만들어 저장한다. (세트, 새로 만들었나)([Q2] · [Q4])."""
+        """오늘(또는 더 새) 세트가 있으면 그것을, 없으면 factory 로 만들어 저장한다. (세트, 새로 만들었나)([Q2] · [Q4]).
+
+        저장된 세트보다 오래된 날짜의 세트로는 덮지 않는다.
+        """
         today_str = today.isoformat()
         with self._lock:
             quiz, scores = self._read_state_unlocked()
-            if quiz is not None and quiz.date == today_str:
+            if quiz is not None and quiz.date >= today_str:
                 return quiz, False
             made = factory()
             if made is None:
