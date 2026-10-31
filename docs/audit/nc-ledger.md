@@ -84,14 +84,11 @@
 
 ## 부적합
 
-**다음 번호: NC-13 · U-7**
+**다음 번호: NC-14 · U-7**
 
 | NC | 무엇 | 낸 회차 | 담당 | 심각도 | 상태 | 판정과 근거 |
 |---|---|---|---|---|---|---|
-| 9 | 맡은 범위를 적은 머리 주석 · 독스트링이 조각 review-quiz 를 빠뜨렸다 — `public/app.js:2-10` · `public/standalone-engine.js:2-6` · `src/app.py:1`(`GET /api/quiz/scores` · 옛 누락 `GET /api/mission/today`) | 회차 19 | `audit-internal` | 낮음 | **고침** | 저자 판정(2026-10-31) 고침 — 세 머리글에 review-quiz 와 퀴즈 길 넷 · 백업 퀴즈 칸 · 미션 길을 더했다. NC-6 의 잔여가 아니라 새 기능이 문장을 거짓으로 만든 경우라 새 번호(감사자 판단 그대로). 재감사 대기 |
-| 10 | `tests/test_quiz.py` 모듈 독스트링이 PR 3 몫(Q6 · Q8)을 빠뜨렸다 | 회차 19 | `audit-internal` | 낮음 | **고침** | 저자 판정(2026-10-31) 고침 — 「PR 3 몫: Q6 · Q8, 닫기 전 감사 고침: Q8(NC-12)」를 더했다. 재감사 대기 |
-| 11 | 「정리」 규칙을 주석(`src/quiz_types.py:37`) · 설계 [Q1] 은 「앞뒤 공백」이라 하는데 코드는 가운데 연속 공백도 하나로 합친다 | 회차 19 | `audit-internal` | 낮음 | **고침** | 저자 판정(2026-10-31) 고침 — 글을 코드에 맞췄다: 주석(서버 `normalize_text` · 엔진 `quizNormalize`)과 설계 끝 「2026-10-31 — 닫기 전 감사 뒤 정한 것」에 「앞뒤 공백을 지우고 가운데 연속 공백은 하나로」. 재감사 대기 |
-| 12 | 백업 불러오기에서 퀴즈를 쓴 뒤 첨삭 · 단어장 · 루틴 쓰기가 실패해도(삼킴) 「복원 완료」가 뜨고 기록이 섞인다 — `public/standalone-engine.js` `importBackupPayload` · `writeJsonStorage` | 회차 20 | `audit-data` | 보통 | **고침** | 저자 판정(2026-10-31) 고침 — 네 칸을 한 묶음으로 쓰고, 하나라도 실패하면 이미 바꾼 칸을 불러오기 전 값으로 되돌리고(없던 칸은 지움) 오류를 던진다. 시험 `test_q8_later_save_failure_on_restore_rolls_back_quiz_too`(첨삭 · 단어장 · 루틴 칸 실패 셋, 고치기 전 코드에서 떨어짐, 변조본 넷 모두 떨어짐). 설계 끝 「2026-10-31 — 닫기 전 감사 뒤 정한 것」. 재감사 대기 |
+| 13 | 설계 끝 「코드 주석의 조각 표기」가 「이 조각의 주석은 그렇게 맞췄다」고 했는데 `tests/test_quiz.py:465` 독스트링이 「조각 8」 번호만 쓴다 | 회차 22 | `audit-internal` | 낮음 | **고침** | 판정(2026-10-31) 고침 — 업무 영향이 없는 기술 결정이라 프로필 규칙대로 추천안으로 정했다. 독스트링을 「조각 8(review-quiz)」로 맞췄고(같은 꼴을 `src` · `public` · `tests` 전체에서 다시 찾아 남은 자리 없음), 감사의 제안대로 규칙을 `docs/master-plan.md` 조각 나눔 머리말에 한 줄 두었다. 재감사 대기 |
 
 ## 확인불가
 
@@ -102,4 +99,4 @@
 | 3 | 앵커볼트(첨삭 요청 · 응답 구조, 프롬프트 규약)와 `src/` · `public/standalone-engine.js` 가 조각 7 에서 바뀌지 않았는가 | 회차 15 | `audit-internal` | 조각 7 구현 직전 main 부터 지금까지의 diff | 호출자 | 0 | 닫힘 — 회차 16(`audit-internal`, 담당) 판정 적합: `git diff ce2845b 9c921e8` 에서 `src/` · `public/standalone-engine.js` · `public/sw.js` 변경 없음. 부적합 아님 |
 | 4 | 조각 7 구현에 설계 ⑥(PR 1~5) 밖의 기능이 실렸는가 — 특히 `renderHistoryList` 의 첫 로드 자동 그리기 | 회차 15 | `audit-internal` | U-3 과 같은 diff | 호출자 | 1 | 닫힘 — 회차 17(`audit-internal`, 담당) 판정 적합: `ce2845b..9c921e8` 본문이 설계 ⑥ PR 1~5 와 덧붙임에만 대응하고, `renderHistoryList` 첫 로드 자동 그리기는 조각 7 전부터 있던 코드다. 부적합 아님 |
 | 5 | 회차 15 고침 커밋(`9c921e8..abebd8d`)이 `src/` 나 그 밖의 걸러 낸 파일을 건드렸는가 | 회차 16 | `audit-internal` | 거르지 않은 `git diff --stat 9c921e8 abebd8d` | 호출자 | 0 | 닫힘 — 회차 17(`audit-internal`, 담당) 판정 적합: 거르지 않은 `--stat 9c921e8 abebd8d` 에 `src/` · `standalone-engine.js` · `sw.js` 가 없다(`abebd8d..d2942c6` 도 같다). 부적합 아님 |
-| 6 | 조각 review-quiz PR 1 · PR 2 가 배포된 동안 저장된 퀴즈 기록을 지금(`248838c`) 검증이 받아들이는가 — 떨어지면 다음 쓰기에서 말없이 사라진다 | 회차 20 | `audit-data` | `git diff ec0e41c 248838c`(· `5678444 248838c`)에서 저장 모양과 검증 함수가 더 엄격해졌는지, 또는 저자의 사용 여부 | 호출자 · 저자 | 0 | 열림 — 근거 받음(호출자, 2026-10-31): `git diff ec0e41c 248838c -- src/quiz_types.py src/quiz_store.py public/standalone-engine.js` 에서 `from_dict` · `to_dict` · `validateQuiz*` 는 빼는 줄 없이 그대로이고, 바뀐 것은 `build_score_summary` · `current_set` · 날짜 규칙 `>=` · 엔진 라우트뿐이다. 담당 회차 판정 대기 |
+| 6 | 조각 review-quiz PR 1 · PR 2 가 배포된 동안 저장된 퀴즈 기록을 지금(`248838c`) 검증이 받아들이는가 — 떨어지면 다음 쓰기에서 말없이 사라진다 | 회차 20 | `audit-data` | `git diff ec0e41c 248838c`(· `5678444 248838c`)에서 저장 모양과 검증 함수가 더 엄격해졌는지, 또는 저자의 사용 여부 | 호출자 · 저자 | 0 | 닫힘 — 회차 21(`audit-data`, 담당) 판정 적합: 호출자 근거 `git diff ec0e41c 248838c` 에서 저장 모양(`to_dict`)과 읽기 · 검증(`from_dict` 셋 · `_read_state_unlocked` · `validateQuiz*` 셋 · `getQuizState`)이 바뀌지 않았다. PR 1 · PR 2 동안 저장된 기록도 같은 검증으로 읽힌다. 부적합 아님 |

@@ -462,7 +462,7 @@ class TestQuizServer(unittest.TestCase):
 
     # [Q10]
     def test_q10_feedback_anchor_unchanged(self) -> None:
-        """[Q10] 첨삭 요청 · 응답 구조와 첨삭 지시문 · 스키마가 조각 8 전과 글자까지 같다(서버 · 엔진)."""
+        """[Q10] 첨삭 요청 · 응답 구조와 첨삭 지시문 · 스키마가 조각 8(review-quiz) 전과 글자까지 같다(서버 · 엔진)."""
         py_print = hashlib.sha256(
             (
                 gemini_module.SYSTEM_INSTRUCTION
