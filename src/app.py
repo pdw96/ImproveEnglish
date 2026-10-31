@@ -1,4 +1,4 @@
-"""첨삭(POST /api/feedback, GET /api/history), 단어장·복습(GET/POST /api/vocab, POST /api/vocab/review, DELETE /api/vocab/<id>), 학습 루틴(GET /api/routine, POST /api/routine/goal), 오늘의 퀴즈(GET/POST /api/quiz/today, POST /api/quiz/attempt) 및 정적 웹 화면을 제공하는 로컬 서버."""
+"""첨삭(POST /api/feedback, GET /api/history), 단어장·복습(GET/POST /api/vocab, POST /api/vocab/review, DELETE /api/vocab/<id>), 학습 루틴(GET /api/routine, POST /api/routine/goal), 오늘의 미션(GET /api/mission/today), 오늘의 퀴즈(GET/POST /api/quiz/today, POST /api/quiz/attempt, GET /api/quiz/scores) 및 정적 웹 화면을 제공하는 로컬 서버."""
 
 from __future__ import annotations
 

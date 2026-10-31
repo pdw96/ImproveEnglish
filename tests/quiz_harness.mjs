@@ -221,6 +221,44 @@ const out = {};
   out.vocabWins = await call(w, "POST", "/api/quiz/today");
 }
 
+// 실제 기기 확인 뒤(저자 판정): 설명문 뜻 · 40자 넘는 뜻 · 두 문장 붙은 표현은 문제로 내지 않는다
+{
+  const UNWORTHY = [
+    ["reschedule the meeting", "고객사나 상사에게 정중하게 회의 일정 변경을 요청할 때 가장 무난한 표현입니다.", ""],
+    ["just to let you know", "참고로 말씀드리자면, 알려드리자면 — 이메일 첫머리에서 가볍게 소식을 전할 때 쓰는 말", ""],
+    ["I was wondering if you could check this: Drop off my luggage.", "짐을 맡기다", ""],
+  ];
+  const item = ([expression, meaning, example], i) => ({
+    id: `u-${i}`, expression, meaning, example, box: 0, reviewCount: 0,
+    nextReviewDate: "2026-10-01", createdAt: "2026-10-01T00:00:00Z", lastReviewedAt: null,
+  });
+  const withItems = (n, extra) => {
+    const clock = makeClock("2026-10-30T09:00:00");
+    return openWindow({ ie_vocab_items_v1: JSON.stringify([...vocab(n), ...extra.map(item)]) }, clock);
+  };
+  out.unworthy = {
+    five: await call(withItems(5, UNWORTHY), "POST", "/api/quiz/today"),
+    four: await call(withItems(4, UNWORTHY), "POST", "/api/quiz/today"),
+    rule: [],
+  };
+  // 규칙 그 자체 — 쓸 만한 표현 4개 + 시험할 표현 1개로 세트가 열리면(5문제) 통과, 안 열리면 탈락
+  const cases = [
+    ["give up again", "또 포기하다"],
+    ["Just to let you know.", "참고로 말하자면"],
+    ["reschedule A for B", "A(일정)를 B(새 시간)로 변경하다"],
+    ["e.g.", "예를 들어"],
+    ["reschedule", "회의 일정을 바꿀 때 무난한 표현입니다."],
+    ["check in", "체크인해요"],
+    ["x", "가".repeat(41)],
+    ["Thanks. See you.", "고마워, 또 봐"],
+    ["Could you check this: drop off", "맡기다"],
+  ];
+  for (const [e, m] of cases) {
+    const res = await call(withItems(4, [[e, m, ""]]), "POST", "/api/quiz/today");
+    out.unworthy.rule.push(Boolean(res.body.quiz));
+  }
+}
+
 // 서버 모드에서 서버 세트를 풀다 서버가 끊겨 제출이 엔진으로 넘어옴 — 기기에도 같은 날짜 · 같은 문제 수의 다른 세트가 있다
 {
   const clock = makeClock("2026-10-30T09:00:00");
@@ -323,6 +361,34 @@ async function aiScene({ items, key = KEY, status = 200, local: extra = {}, resp
   const second = await call(w, "POST", "/api/quiz/today");
   const aiCalls = w.calls.filter((c) => c.url.includes("generativelanguage"));
   return { w, first, second, aiCalls };
+}
+
+// 진단(임시, ?quiz-debug) — 모델마다 상태, 문제마다 통과 · 떨어진 이유. 저장하지 않고 키를 담지 않는다
+{
+  const clock = makeClock("2026-10-30T09:00:00");
+  const local = { ...device(11, true), ie_gemini_api_key: KEY };
+  const w = openWindow(local, clock);
+  let n = 0;
+  w.ctx.aiResponder = async () => {
+    n += 1;
+    // 첫 모델: 오류 본문에 키가 섞여 와도 진단은 키를 가린다. 둘째 모델: 셋 중 둘이 떨어지고 하나 통과
+    if (n === 1) return new Response(`{"error":{"code":400,"message":"bad ${KEY}"}}`, { status: 400 });
+    return geminiReply([
+      aiItem("reschedule A for B", { choices: ["reschedule", "take after", "look into", "run out of"] }),
+      aiItem("kick off", { question: "We will kick off soon." }),
+      aiItem("put up with"),
+    ]);
+  };
+  const before = JSON.stringify(w.ctx.localStorage.dump());
+  const report = await w.ctx.ImproveEnglishStandalone.diagnoseQuizAi();
+  const noKey = openWindow(device(11, true), clock);
+  out.diagnose = {
+    report,
+    text: JSON.stringify(report),
+    unchanged: JSON.stringify(w.ctx.localStorage.dump()) === before,
+    noKey: await noKey.ctx.ImproveEnglishStandalone.diagnoseQuizAi(),
+    KEY,
+  };
 }
 
 // AI 3개 — 하나는 내 기록에도 있는 표현(give up): 내 기록 쪽에서 빠져야 한다
@@ -586,6 +652,27 @@ async function playDay(w, clock, iso, wrong) {
     }
     target.ctx.localStorage.failKey = null;
     out.backupSaveFail = { error, result, unchanged: JSON.stringify(target.ctx.localStorage.dump()) === before };
+  }
+  // 퀴즈를 쓴 뒤 첨삭 · 단어장 · 루틴 가운데 하나를 저장하지 못하는 기기(감사 NC-12) — 이미 바꾼 칸을 되돌리고 멈춘다.
+  // 기기에는 백업과 다른 퀴즈 · 첨삭 기록이 있고, 단어장 칸은 처음부터 없다(되돌릴 때 없던 칸은 지운다).
+  out.backupLaterFail = {};
+  for (const failKey of ["ie_feedback_history_v1", "ie_vocab_items_v1", "ie_routine_state_v1"]) {
+    const seed = w.ctx.localStorage.dump();
+    seed[QUIZ_KEY] = JSON.stringify({ today: null, scores: [] });
+    seed["ie_feedback_history_v1"] = JSON.stringify([{ id: "device-only" }]);
+    delete seed["ie_vocab_items_v1"];
+    const target = openWindow(seed, clock);
+    const before = JSON.stringify(target.ctx.localStorage.dump());
+    target.ctx.localStorage.failKey = failKey;
+    let error = null;
+    let result = null;
+    try {
+      result = target.ctx.ImproveEnglishStandalone.importBackupPayload({ ...backup, history: [], vocab: [] });
+    } catch (e) {
+      error = String(e.message || e);
+    }
+    target.ctx.localStorage.failKey = null;
+    out.backupLaterFail[failKey] = { error, result, unchanged: JSON.stringify(target.ctx.localStorage.dump()) === before };
   }
 
   out.badBackup = {};

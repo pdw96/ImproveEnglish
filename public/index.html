@@ -248,7 +248,7 @@
 
     <!-- 탭 2: 내 단어장 · 오늘의 복습 화면 -->
     <section id="panel-vocab" class="main-grid" hidden>
-      <!-- 조각 8: 오늘의 퀴즈 카드 (하루 한 세트 · 4지선다 · 점수는 연속 학습일에 세지 않음) -->
+      <!-- 조각 8(review-quiz): 오늘의 퀴즈 카드 (하루 한 세트 · 4지선다 · 점수는 연속 학습일에 세지 않음) -->
       <section id="daily-quiz-card" class="card daily-quiz-card" aria-labelledby="daily-quiz-heading">
         <div class="card-header-row">
           <h2 id="daily-quiz-heading" tabindex="-1"><span class="sec-num">00</span> 오늘의 퀴즈</h2>
@@ -258,7 +258,7 @@
         <!-- 시작 -->
         <div id="daily-quiz-start" class="daily-quiz-start">
           <p class="history-guide">
-            내 단어장 · 첨삭 기록에서 낸 4지선다 문제를 하루 한 세트 풉니다. 점수는 기록에 남지만 연속 학습일에는 세지 않습니다.
+            내 단어장 · 첨삭 기록 문제와 AI 새 문제를 섞은 4지선다 10문제를 하루 한 세트 풉니다. 점수는 기록에 남지만 연속 학습일에는 세지 않습니다.
           </p>
           <p id="daily-quiz-notice" class="daily-quiz-notice" role="status" hidden></p>
           <button type="button" id="daily-quiz-start-btn" class="btn btn-primary">퀴즈 시작</button>
@@ -508,7 +508,7 @@
         <p id="goal-status-msg" class="status-msg" role="status" aria-live="polite" hidden></p>
       </section>
 
-      <!-- ④ 조각 8: 오늘의 퀴즈 점수 (연속 학습일 · 하루 목표와는 따로) -->
+      <!-- ④ 조각 8(review-quiz): 오늘의 퀴즈 점수 (연속 학습일 · 하루 목표와는 따로) -->
       <section id="quiz-score-card" class="card quiz-score-card" aria-labelledby="quiz-score-heading">
         <div class="card-header-row">
           <h2 id="quiz-score-heading"><span class="sec-num">04</span> 오늘의 퀴즈 점수</h2>

@@ -16,7 +16,7 @@
 ## 조각 나눔
 
 `순서` 가 `—` 이면 순서를 매기지 않은 후보다. 일하다 새 조각이 필요하면 그 자리에서 만들지 않고 여기 한 줄을
-더한다. 다른 문서는 조각을 번호가 아니라 이름으로 가리킨다.
+더한다. 다른 문서는 조각을 번호가 아니라 이름으로 가리킨다. 코드 주석도 같다 — 번호를 쓰면 「조각 8(review-quiz)」처럼 이름을 함께 쓴다(조각 review-quiz 부터, 옛 글은 소급하지 않는다).
 
 | 순서 | 조각 | 목표 한 줄 | 의존 | 상태 | 조각 폴더 |
 |---|---|---|---|---|---|
@@ -30,6 +30,7 @@
 | 8 | review-quiz | 하루 한 번 내 단어장 · 첨삭 기록과 AI 새 문제를 섞은 4지선다 퀴즈를 풀고 점수를 남긴다 | ai-feedback · vocab-review | 진행 | `docs/slices/8-review-quiz/` |
 | 9 | ai-provider-choice | 첨삭 · 퀴즈에 쓸 AI 를 Gemini · ChatGPT · Claude 가운데 고르고, 각자 자기 API 키를 넣어 쓴다 | ai-feedback · review-quiz | 예정 | — |
 | — | level-tutor | 처음 쓸 때 배치 문제를 풀면 공인어학 성적 평가표(CEFR)로 내 수준을 정하고, 그 뒤 내 문장 완성도를 평가표에 대어 퀴즈 · 미션 · 첨삭 난이도를 맞춘다 | review-quiz | 예정 | — |
+| — | storage-safety | 저장 파일 · 기기 저장소가 깨져 읽지 못해도 「기록 없음」으로 덮어쓰지 않고 따로 보관해, 첨삭 · 단어장 · 루틴 · 퀴즈 기록을 잃지 않는다 | ai-feedback · vocab-review · study-routine · review-quiz | 예정 | — |
 
 ## 범위 변경
 

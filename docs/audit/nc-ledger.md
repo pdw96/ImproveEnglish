@@ -84,7 +84,7 @@
 
 ## 부적합
 
-**다음 번호: NC-9 · U-6**
+**다음 번호: NC-14 · U-9**
 
 | NC | 무엇 | 낸 회차 | 담당 | 심각도 | 상태 | 판정과 근거 |
 |---|---|---|---|---|---|---|
@@ -98,3 +98,6 @@
 | 3 | 앵커볼트(첨삭 요청 · 응답 구조, 프롬프트 규약)와 `src/` · `public/standalone-engine.js` 가 조각 7 에서 바뀌지 않았는가 | 회차 15 | `audit-internal` | 조각 7 구현 직전 main 부터 지금까지의 diff | 호출자 | 0 | 닫힘 — 회차 16(`audit-internal`, 담당) 판정 적합: `git diff ce2845b 9c921e8` 에서 `src/` · `public/standalone-engine.js` · `public/sw.js` 변경 없음. 부적합 아님 |
 | 4 | 조각 7 구현에 설계 ⑥(PR 1~5) 밖의 기능이 실렸는가 — 특히 `renderHistoryList` 의 첫 로드 자동 그리기 | 회차 15 | `audit-internal` | U-3 과 같은 diff | 호출자 | 1 | 닫힘 — 회차 17(`audit-internal`, 담당) 판정 적합: `ce2845b..9c921e8` 본문이 설계 ⑥ PR 1~5 와 덧붙임에만 대응하고, `renderHistoryList` 첫 로드 자동 그리기는 조각 7 전부터 있던 코드다. 부적합 아님 |
 | 5 | 회차 15 고침 커밋(`9c921e8..abebd8d`)이 `src/` 나 그 밖의 걸러 낸 파일을 건드렸는가 | 회차 16 | `audit-internal` | 거르지 않은 `git diff --stat 9c921e8 abebd8d` | 호출자 | 0 | 닫힘 — 회차 17(`audit-internal`, 담당) 판정 적합: 거르지 않은 `--stat 9c921e8 abebd8d` 에 `src/` · `standalone-engine.js` · `sw.js` 가 없다(`abebd8d..d2942c6` 도 같다). 부적합 아님 |
+| 6 | 조각 review-quiz PR 1 · PR 2 가 배포된 동안 저장된 퀴즈 기록을 지금(`248838c`) 검증이 받아들이는가 — 떨어지면 다음 쓰기에서 말없이 사라진다 | 회차 20 | `audit-data` | `git diff ec0e41c 248838c`(· `5678444 248838c`)에서 저장 모양과 검증 함수가 더 엄격해졌는지, 또는 저자의 사용 여부 | 호출자 · 저자 | 0 | 닫힘 — 회차 21(`audit-data`, 담당) 판정 적합: 호출자 근거 `git diff ec0e41c 248838c` 에서 저장 모양(`to_dict`)과 읽기 · 검증(`from_dict` 셋 · `_read_state_unlocked` · `validateQuiz*` 셋 · `getQuizState`)이 바뀌지 않았다. PR 1 · PR 2 동안 저장된 기록도 같은 검증으로 읽힌다. 부적합 아님 |
+| 7 | 대장에서 닫혀 지나간 쪽으로 옮긴 NC-9 ~ NC-12 줄의 「무엇」 칸과 첫 판정이 글자 그대로인가(`nc-ledger.md` 「등록하는 법」 8 · 「무엇이 기록이고」) | 회차 23 | `audit-internal` | `git diff 3de9c20 4346094 -- docs/audit/nc-ledger.md docs/audit/nc-ledger-history.md` | 호출자 | 0 | 닫힘 — 회차 24(`audit-internal`, 담당) 판정 적합: 옮긴 NC-9 ~ NC-12 네 줄의 「무엇」 칸 · 낸 회차 · 담당 · 심각도 · 첫 판정(「. 재감사 대기」까지)이 옮기기 전 글과 바이트 단위로 같고, 바뀐 것은 상태 칸과 해소 덧붙임뿐이다. 호출자가 말한 중간 상태(`4346094` 가 지우고 `ab91b9f` 가 되살림)도 맞다. 부적합 아님 |
+| 8 | `4346094` 에서 처음 선 NC-13 줄이 지나간 쪽으로 글자 그대로 옮겨졌는가 | 회차 24 | `audit-internal` | `git diff 4346094 ab91b9f -- docs/audit/nc-ledger.md docs/audit/nc-ledger-history.md` | 호출자 | 0 | 닫힘 — 회차 24(`audit-internal`, 담당) 같은 회차에 근거를 받아 판정 적합: 옮기기 전 줄과 `nc-ledger-history.md` 의 NC-13 줄이 상태 칸 · 해소 덧붙임 말고는 같다. 부적합 아님 |
