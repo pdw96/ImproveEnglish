@@ -1913,41 +1913,6 @@
   const dailyQuizWrongList = document.getElementById("daily-quiz-wrong-list");
   const dailyQuizRetryBtn = document.getElementById("daily-quiz-retry-btn");
   const dailyQuizAiNotice = document.getElementById("daily-quiz-ai-notice");
-
-  // 진단(임시) — 주소에 ?quiz-debug 가 있을 때만 퀴즈 카드 아래에 [AI 진단] 단추와 결과 상자를 보인다(단독 앱 모드).
-  // 오늘 세트와 같은 요청으로 Gemini 를 한 번 불러 응답 상태 · 문제마다 통과/떨어진 이유를 화면에만 보인다(textContent).
-  // 저장하거나 보내지 않고 키는 보이지 않는다. 실제 기기에서 AI 새 문제가 0개인 원인을 확인한 뒤 뺀다(설계 끝 덧붙임).
-  if (/[?&]quiz-debug\b/.test(window.location.search)) {
-    const card = document.getElementById("daily-quiz-card");
-    const debugBtn = document.createElement("button");
-    debugBtn.type = "button";
-    debugBtn.id = "quiz-debug-btn";
-    debugBtn.className = "btn btn-secondary";
-    debugBtn.textContent = "AI 진단(임시) — AI 를 한 번 부릅니다";
-    const debugOut = document.createElement("pre");
-    debugOut.id = "quiz-debug-log";
-    debugOut.style.cssText =
-      "white-space:pre-wrap;word-break:break-word;font-size:12px;max-height:60vh;overflow:auto;margin-top:12px;";
-    card.appendChild(debugBtn);
-    card.appendChild(debugOut);
-    debugBtn.addEventListener("click", async () => {
-      const engine = window.ImproveEnglishStandalone;
-      if (!engine || engine.getMode() !== "standalone" || typeof engine.diagnoseQuizAi !== "function") {
-        debugOut.textContent = "단독 앱 모드에서만 진단할 수 있습니다.";
-        return;
-      }
-      debugBtn.disabled = true;
-      debugOut.textContent = "AI 를 부르는 중…";
-      try {
-        const report = await engine.diagnoseQuizAi();
-        debugOut.textContent = JSON.stringify(report, null, 1);
-      } catch (e) {
-        debugOut.textContent = `진단 중 오류: ${(e && e.message) || e}`;
-      } finally {
-        debugBtn.disabled = false;
-      }
-    });
-  }
   const dailyQuizAiWords = document.getElementById("daily-quiz-ai-words");
   const dailyQuizAiWordList = document.getElementById("daily-quiz-ai-word-list");
 
