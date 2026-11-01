@@ -462,11 +462,39 @@ async function aiScene({ items, key = KEY, status = 200, local: extra = {}, resp
     missingField: (() => { const it = aiItem("cut down on"); delete it.explanation; return it; })(),
     duplicateTarget: aiItem("Put Up With"),
     notObject: "question",
+    exampleMismatch: aiItem("cut down on", { example: "I really want to quit this habit." }),
+    twoBlanks: aiItem("cut down on", { question: "I ____ want to ____ this habit.", example: "I cut down on want to cut down on this habit." }),
+    exampleEmpty: aiItem("cut down on", { example: "" }),
   };
   out.aiBad = {};
   for (const [name, item] of Object.entries(bad)) {
     const { first } = await aiScene({ items: [aiItem("put up with"), item] });
     out.aiBad[name] = first.body.quiz.questions.filter((x) => x.source === "ai").length;
+  }
+  // 실제 기기 확인 뒤(저자 판정): 문장에 맞는 꼴의 정답(자리표시 · 시제 · 문장 부호 차이)은 받는다
+  const good = {
+    placeholder: aiItem("reschedule A for B", {
+      question: "Can we ____ next Monday?",
+      choices: ["reschedule the meeting for", "take after", "look into", "run out of"],
+      example: "Can we reschedule the meeting for next Monday?",
+    }),
+    tense: aiItem("push back", {
+      question: "They ____ the launch again.",
+      choices: ["pushed back", "took after", "looked into", "ran out of"],
+      example: "They pushed back the launch again.",
+    }),
+    punctuationAndCase: aiItem("I was wondering if ~", {
+      question: "____ you could help me.",
+      choices: ["I was wondering if", "I took after", "I looked into", "I ran out of"],
+      example: "i was wondering if you could help me",
+    }),
+  };
+  out.aiGood = {};
+  for (const [name, item] of Object.entries(good)) {
+    const { first } = await aiScene({ items: [aiItem("put up with"), item] });
+    const ai = first.body.quiz.questions.filter((x) => x.source === "ai");
+    const target = ai.find((x) => x.expression === item.expression);
+    out.aiGood[name] = { expressions: ai.map((x) => x.expression).sort(), answer: target ? target.choices[target.answerIndex] : null };
   }
   const four = await aiScene({ items: ["put up with", "cut down on", "get rid of", "make up for"].map((e) => aiItem(e)) });
   out.aiBad.moreThanThree = four.first.body.quiz.questions.filter((x) => x.source === "ai").length;
