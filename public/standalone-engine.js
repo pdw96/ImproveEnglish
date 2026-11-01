@@ -1265,11 +1265,13 @@
     "1. 각 문제는 목록의 서로 다른 표현 하나를 대상으로 합니다. 사용자가 본 적 없는 새 영어 문장 하나를 쓰고, " +
     "대상 표현이 들어갈 자리를 ____ (밑줄 4개)로 비워 question 에 넣습니다.\n" +
     "2. 문장 수준(단어 난이도 · 길이)은 사용자의 교정 문장과 비슷하게 맞추고, 20단어를 넘기지 않습니다.\n" +
-    "3. choices 는 영어 표현 4개입니다. 정답은 대상 표현 그대로 쓰고, 오답 3개는 비슷한 길이 · 같은 품사로 " +
+    "3. choices 는 영어 표현 4개입니다. 정답 보기는 대상 표현을 그 문장에 맞는 꼴로 쓴 것입니다(시제 · 인칭에 맞게 바꾸고, " +
+    "A · B · ~ · one's 같은 자리는 알맞은 말로 채움). 오답 3개는 비슷한 길이 · 같은 품사로 " +
     "그럴듯하지만 그 문장에는 맞지 않는 표현입니다. 네 보기는 서로 달라야 합니다.\n" +
     "4. answerIndex 는 정답 보기의 번호(0~3)입니다.\n" +
     "5. explanation 은 왜 정답인지, 오답이 왜 어색한지 한국어로 2문장 이내로 씁니다.\n" +
-    "6. expression 은 대상 표현, meaning 은 그 한국어 뜻, example 은 빈칸을 정답으로 채운 완성 문장입니다.";
+    "6. expression 은 목록에 적힌 대상 표현 그대로, meaning 은 그 한국어 뜻, example 은 question 의 ____ 를 정답 보기로 " +
+    "바꾼 완성 문장입니다(그 밖의 글자는 question 과 같게).";
   const QUIZ_RESPONSE_SCHEMA = {
     type: "OBJECT",
     required: ["questions"],
@@ -1291,9 +1293,9 @@
             },
             answerIndex: { type: "INTEGER", description: "정답 보기 번호(0~3)" },
             explanation: { type: "STRING", description: "정답 · 오답 이유를 설명하는 한국어 해설" },
-            expression: { type: "STRING", description: "대상 영어 표현" },
+            expression: { type: "STRING", description: "목록에 적힌 대상 영어 표현 그대로" },
             meaning: { type: "STRING", description: "대상 표현의 한국어 뜻" },
-            example: { type: "STRING", description: "빈칸을 정답으로 채운 완성 문장" },
+            example: { type: "STRING", description: "question 의 ____ 를 정답 보기로 바꾼 완성 문장" },
           },
         },
       },
@@ -1307,6 +1309,22 @@
       return result.status === "no_key" ? QUIZ_AI_NOTICE_NO_KEY : QUIZ_AI_NOTICE_FAILED;
     }
     return `AI 새 문제를 ${count}개만 만들어 나머지는 내 기록으로 채웠습니다.`;
+  }
+
+  // 빈칸 ____ 이 하나이고 그 자리를 정답 보기로 채운 문장이 example 과 같은가(문장 부호 · 대소문자는 보지 않음) — 서버 fills_example 과 같다.
+  // 실제 기기 확인 뒤(저자 판정): 정답 보기가 대상 표현과 글자까지 같아야 하던 검사를 바꾼 것이다(자리표시 · 시제 변화 허용)
+  function quizLoose(text) {
+    return String(text || "")
+      .replace(/[’‘]/g, "'")
+      .replace(/[.,!?;:"“”()[\]]/g, " ")
+      .split(/\s+/)
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  }
+  function quizFillsExample(question, answer, example) {
+    if (question.split(QUIZ_BLANK).length !== 2 || !String(example || "").trim()) return false;
+    return quizLoose(question.replace(QUIZ_BLANK, answer)) === quizLoose(example);
   }
 
   // Gemini 응답에서 문제를 꺼내 ③ 의 모양으로 검증 — 틀린 문제는 그 문제만 버리고 앞의 3개만 쓴다
@@ -1338,8 +1356,7 @@
       });
       if (!checked) continue;
       const target = quizNormalize(checked.expression);
-      if (!checked.question.includes(QUIZ_BLANK)) continue;
-      if (quizNormalize(checked.choices[checked.answerIndex]) !== target) continue;
+      if (!quizFillsExample(checked.question, checked.choices[checked.answerIndex], checked.example)) continue;
       if (seenTargets.has(target)) continue;
       seenTargets.add(target);
       const correct = checked.choices[checked.answerIndex];

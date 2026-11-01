@@ -579,6 +579,34 @@ AI_BAD_FORMS = {
     "missingField": {k: v for k, v in ai_item("cut down on").items() if k != "explanation"},
     "duplicateTarget": ai_item("Put Up With"),
     "notObject": "question",
+    # 실제 기기 확인 뒤 바뀐 검사 — 빈칸을 정답 보기로 채운 문장이 example 과 달라야 떨어진다
+    "exampleMismatch": ai_item("cut down on", example="I really want to quit this habit."),
+    "twoBlanks": ai_item(
+        "cut down on", question="I ____ want to ____ this habit.", example="I cut down on want to cut down on this habit."
+    ),
+    "exampleEmpty": ai_item("cut down on", example=""),
+}
+
+# 실제 기기 확인 뒤(저자 판정): 정답 보기가 대상 표현과 글자까지 같지 않아도, 빈칸을 채운 문장이 example 이면 받는다
+AI_GOOD_FORMS = {
+    "placeholder": ai_item(
+        "reschedule A for B",
+        question="Can we ____ next Monday?",
+        choices=["reschedule the meeting for", "take after", "look into", "run out of"],
+        example="Can we reschedule the meeting for next Monday?",
+    ),
+    "tense": ai_item(
+        "push back",
+        question="They ____ the launch again.",
+        choices=["pushed back", "took after", "looked into", "ran out of"],
+        example="They pushed back the launch again.",
+    ),
+    "punctuationAndCase": ai_item(
+        "I was wondering if ~",
+        question="____ you could help me.",
+        choices=["I was wondering if", "I took after", "I looked into", "I ran out of"],
+        example="i was wondering if you could help me",
+    ),
 }
 
 
@@ -756,6 +784,17 @@ class TestQuizAiServer(unittest.TestCase):
             self.assertEqual((q.kind, q.source), ("ai", "ai"))
         self.assertEqual(parse_ai_questions({"candidates": []}), [])
         self.assertEqual(parse_ai_questions({"candidates": [{"content": {"parts": [{"text": "{}"}]}}]}), [])
+
+    def test_ai_answer_in_sentence_form_is_accepted(self) -> None:
+        """실제 기기 확인 뒤(저자 판정): 자리표시 · 시제 변화 · 문장 부호 차이가 있어도 빈칸을 채운 문장이 example 이면 받고,
+        단어장에 담을 표현은 목록에 적힌 꼴(expression)을 그대로 둔다."""
+        for name, good in AI_GOOD_FORMS.items():
+            with self.subTest(form=name):
+                kept = self.parsed([ai_item("put up with"), good])
+                self.assertEqual([q.expression for q in kept], ["put up with", good["expression"]])
+                q = kept[1]
+                self.assertEqual(q.choices[q.answer_index], good["choices"][good["answerIndex"]])
+                self.assertEqual(q.example, good["example"])
 
     def test_q7_ai_expression_saves_to_vocab_and_reports_duplicate(self) -> None:
         """[Q7] AI 문제의 대상 표현 · 뜻 · 예문으로 단어장 추가 — 처음은 담고, 다시 누르면 「이미 있음」, 복습 일정은 그대로."""
@@ -1063,6 +1102,15 @@ class TestQuizEngine(unittest.TestCase):
         self.assertNotIn(failed["KEY"], failed["bodyText"])
         for scene in (no_key, locked):
             self.assertEqual((scene["total"], scene["aiNotice"], scene["aiCalls"]), (10, AI_NOTICE_NO_KEY, 0))
+
+    def test_ai_answer_in_sentence_form_is_accepted(self) -> None:
+        """실제 기기 확인 뒤(저자 판정): 자리표시 · 시제 변화 · 문장 부호 차이가 있어도 빈칸을 채운 문장이 example 이면 받는다(단독 앱)."""
+        good = self.out["aiGood"]
+        self.assertEqual(set(good), set(AI_GOOD_FORMS))
+        for name, scene in good.items():
+            with self.subTest(form=name):
+                self.assertEqual(scene["expressions"], sorted(["put up with", AI_GOOD_FORMS[name]["expression"]]))
+                self.assertEqual(scene["answer"], AI_GOOD_FORMS[name]["choices"][0])
 
     def test_ai_response_each_bad_form_drops_only_that_question(self) -> None:
         """③ AI 응답 — 꼴마다 그 문제만 버리고, 3개를 넘으면 앞의 3개, 해석 못 하면 0개와 실패 안내."""

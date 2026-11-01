@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import random
+import re
 from typing import Any, Callable
 import uuid
 
@@ -32,11 +33,13 @@ QUIZ_SYSTEM_INSTRUCTION = (
     "1. 각 문제는 목록의 서로 다른 표현 하나를 대상으로 합니다. 사용자가 본 적 없는 새 영어 문장 하나를 쓰고, "
     "대상 표현이 들어갈 자리를 ____ (밑줄 4개)로 비워 question 에 넣습니다.\n"
     "2. 문장 수준(단어 난이도 · 길이)은 사용자의 교정 문장과 비슷하게 맞추고, 20단어를 넘기지 않습니다.\n"
-    "3. choices 는 영어 표현 4개입니다. 정답은 대상 표현 그대로 쓰고, 오답 3개는 비슷한 길이 · 같은 품사로 "
+    "3. choices 는 영어 표현 4개입니다. 정답 보기는 대상 표현을 그 문장에 맞는 꼴로 쓴 것입니다(시제 · 인칭에 맞게 바꾸고, "
+    "A · B · ~ · one's 같은 자리는 알맞은 말로 채움). 오답 3개는 비슷한 길이 · 같은 품사로 "
     "그럴듯하지만 그 문장에는 맞지 않는 표현입니다. 네 보기는 서로 달라야 합니다.\n"
     "4. answerIndex 는 정답 보기의 번호(0~3)입니다.\n"
     "5. explanation 은 왜 정답인지, 오답이 왜 어색한지 한국어로 2문장 이내로 씁니다.\n"
-    "6. expression 은 대상 표현, meaning 은 그 한국어 뜻, example 은 빈칸을 정답으로 채운 완성 문장입니다."
+    "6. expression 은 목록에 적힌 대상 표현 그대로, meaning 은 그 한국어 뜻, example 은 question 의 ____ 를 정답 보기로 "
+    "바꾼 완성 문장입니다(그 밖의 글자는 question 과 같게)."
 )
 
 QUIZ_RESPONSE_SCHEMA: dict[str, Any] = {
@@ -68,14 +71,34 @@ QUIZ_RESPONSE_SCHEMA: dict[str, Any] = {
                     },
                     "answerIndex": {"type": "INTEGER", "description": "정답 보기 번호(0~3)"},
                     "explanation": {"type": "STRING", "description": "정답 · 오답 이유를 설명하는 한국어 해설"},
-                    "expression": {"type": "STRING", "description": "대상 영어 표현"},
+                    "expression": {"type": "STRING", "description": "목록에 적힌 대상 영어 표현 그대로"},
                     "meaning": {"type": "STRING", "description": "대상 표현의 한국어 뜻"},
-                    "example": {"type": "STRING", "description": "빈칸을 정답으로 채운 완성 문장"},
+                    "example": {"type": "STRING", "description": "question 의 ____ 를 정답 보기로 바꾼 완성 문장"},
                 },
             },
         }
     },
 }
+
+
+_LOOSE_DROP = re.compile(r"[.,!?;:\"“”()\[\]]")
+
+
+def _loose(text: str) -> str:
+    """문장 비교용 — 소문자, 따옴표 꼴을 맞추고 문장 부호를 빼고 공백을 정리한다."""
+    unified = text.replace("’", "'").replace("‘", "'")
+    return " ".join(_LOOSE_DROP.sub(" ", unified).split()).lower()
+
+
+def fills_example(question: str, answer: str, example: str) -> bool:
+    """빈칸 ____ 이 하나이고, 그 자리를 정답 보기로 채운 문장이 example 과 같은가(문장 부호 · 대소문자는 보지 않음).
+
+    실제 기기 확인 뒤(저자 판정): 정답 보기가 대상 표현과 글자까지 같아야 하던 검사를 바꾼 것이다 — 「reschedule A for B」 ·
+    「I was wondering if ~」 처럼 자리표시가 있거나 시제가 바뀌는 표현도 문장에 맞는 꼴로 정답이 될 수 있다.
+    """
+    if question.count(BLANK_MARK) != 1 or not example.strip():
+        return False
+    return _loose(question.replace(BLANK_MARK, answer)) == _loose(example)
 
 
 @dataclass(frozen=True)
@@ -150,9 +173,7 @@ def parse_ai_questions(raw_response: Any, rng: random.Random | None = None) -> l
         except ValidationError:
             continue
         target = normalize_text(checked.expression)
-        if BLANK_MARK not in checked.question:
-            continue
-        if normalize_text(checked.choices[checked.answer_index]) != target:
+        if not fills_example(checked.question, checked.choices[checked.answer_index], checked.example):
             continue
         if target in seen_targets:
             continue
