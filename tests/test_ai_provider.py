@@ -695,6 +695,31 @@ class TestPhoneVaultAndChoice(unittest.TestCase):
         self.assertTrue(vault["threw"])
         self.assertEqual(vault["local"], vault["before"])
 
+    def test_p5_overlapping_saves_never_leave_two_passwords(self) -> None:
+        """[P5] 겹친 저장(PR 2 리뷰 1회차) — 두 창이 다른 비밀번호로 동시에 저장하면 하나만 들어가고 금고는 그 비밀번호로 열린다.
+        한 창에서 다른 비밀번호로 겹쳐 누르면 뒤의 것이 거절된다. 어느 경우든 어느 비밀번호로도 안 열리는 금고가 남지 않는다."""
+        race = self.out["p5RaceTwoTabs"]
+        oks = [r["ok"] for r in race["results"]]
+        self.assertEqual(sorted(oks), [False, True])
+        winner_is_first = oks[0]
+        self.assertEqual(race["unlockPin"]["ok"], winner_is_first)
+        self.assertEqual(race["unlockOther"]["ok"], not winner_is_first)
+        expected = locked_names("gemini") if winner_is_first else locked_names("openai")
+        self.assertEqual(set(race["local"]), expected)
+
+        diff = self.out["p5RaceSameTabDiffPin"]
+        self.assertEqual([r["ok"] for r in diff["results"]], [True, False])
+        self.assertTrue(diff["unlock"]["ok"])
+        self.assertEqual(set(diff["local"]), locked_names("gemini"))
+
+    def test_p5_overlapping_saves_same_pin_both_land_in_one_vault(self) -> None:
+        """[P5] 한 창에서 같은 비밀번호로 두 회사 키 저장을 겹쳐 눌러도 둘 다 들어가고, 다시 열어 그 비밀번호 한 번에 풀린다."""
+        same = self.out["p5RaceSameTabSamePin"]
+        self.assertEqual([r["ok"] for r in same["results"]], [True, True])
+        self.assertTrue(same["unlock"]["ok"])
+        self.assertEqual(set(same["local"]), locked_names("gemini", "openai"))
+        self.assertEqual(same["keyStates"], {"gemini": "ready", "openai": "ready", "anthropic": "none"})
+
     def test_p5_clear_one_provider_only(self) -> None:
         """[P5] 지우기는 그 회사 키만 — 평문 · 소금 · 초기값 · 암호문 · 창의 푼 키. 다른 회사 키는 그대로."""
         r = self.out["p5ClearOne"]

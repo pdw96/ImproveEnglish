@@ -44,7 +44,8 @@ class FakeStorage {
 // 창 하나를 연다 — 같은 local 을 넘기면 같은 기기, 같은 session 을 넘기면 같은 창(새로고침)이다.
 function openWindow(local = {}, session = {}, failOn = null) {
   const ctx = {
-    localStorage: new FakeStorage(local, failOn),
+    // 같은 FakeStorage 를 넘기면 같은 기기의 두 창(탭)이 저장소를 함께 쓴다
+    localStorage: local instanceof FakeStorage ? local : new FakeStorage(local, failOn),
     sessionStorage: new FakeStorage(session),
     crypto: globalThis.crypto,
     TextEncoder,
@@ -195,6 +196,39 @@ let twoLocked; // gemini · openai 를 PIN 으로 잠근 기기
   await w.engine.unlockWithPin(PIN);
   w.engine.clearApiKey("openai");
   out.p5ClearOne = state(w);
+}
+
+// ── P5 겹친 저장(PR 2 리뷰 1회차) ──
+{
+  // 같은 기기의 두 창이 빈 금고에 서로 다른 비밀번호로 동시에 저장 — 하나만 들어가고, 금고는 그 비밀번호 하나로 열린다
+  const shared = new FakeStorage();
+  const tabA = openWindow(shared);
+  const tabB = openWindow(shared);
+  const results = await Promise.all([
+    attempt(() => tabA.engine.saveApiKeyWithPin({ gemini: KEYS.gemini }, PIN)),
+    attempt(() => tabB.engine.saveApiKeyWithPin({ openai: KEYS.openai }, OTHER_PIN)),
+  ]);
+  const unlockPin = await attempt(() => openWindow(shared.dump(), {}).engine.unlockWithPin(PIN));
+  const unlockOther = await attempt(() => openWindow(shared.dump(), {}).engine.unlockWithPin(OTHER_PIN));
+  out.p5RaceTwoTabs = { results, unlockPin, unlockOther, local: shared.dump() };
+}
+{
+  // 한 창에서 저장을 겹쳐 누름 — 다른 비밀번호면 뒤의 것이 거절되고, 같은 비밀번호면 둘 다 한 금고에 들어간다
+  const w = openWindow();
+  const diff = await Promise.all([
+    attempt(() => w.engine.saveApiKeyWithPin({ gemini: KEYS.gemini }, PIN)),
+    attempt(() => w.engine.saveApiKeyWithPin({ openai: KEYS.openai }, OTHER_PIN)),
+  ]);
+  const diffUnlock = await attempt(() => openWindow(w.ctx.localStorage.dump(), {}).engine.unlockWithPin(PIN));
+  out.p5RaceSameTabDiffPin = { results: diff, unlock: diffUnlock, local: w.ctx.localStorage.dump() };
+  const w2 = openWindow();
+  const same = await Promise.all([
+    attempt(() => w2.engine.saveApiKeyWithPin({ gemini: KEYS.gemini }, PIN)),
+    attempt(() => w2.engine.saveApiKeyWithPin({ openai: KEYS.openai }, PIN)),
+  ]);
+  const reopened = openWindow(w2.ctx.localStorage.dump(), {});
+  const sameUnlock = await attempt(() => reopened.engine.unlockWithPin(PIN));
+  out.p5RaceSameTabSamePin = { results: same, unlock: sameUnlock, ...state(reopened) };
 }
 
 // ── P6 옛 Gemini 키 그대로 ──

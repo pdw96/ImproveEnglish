@@ -176,6 +176,25 @@
     }
   }
 
+  // 금고 저장 값 전체(세 회사의 평문 · 소금 · 초기값 · 암호문)를 한 글로 — 저장 · 풀기가 시작할 때 본 금고가 쓰기 직전에도
+  // 그대로인지 맞대어 본다. 다른 창(탭)이 그사이 금고를 바꿨으면 쓰지 않는다(PR 2 리뷰 1회차 — 비밀번호가 둘인 금고를 막는다)
+  function vaultSnapshot() {
+    return JSON.stringify(
+      PROVIDERS.map((p) => {
+        const n = vaultNames(p);
+        return [n.plain, n.salt, n.iv, n.cipher].map((name) => localStorage.getItem(name));
+      })
+    );
+  }
+
+  // 한 창 안에서 금고를 바꾸는 일(저장 · 풀기)은 하나씩 차례로 — 겹쳐 눌러도 앞의 일이 끝난 금고를 보고 판단한다
+  let vaultQueue = Promise.resolve();
+  function inVaultQueue(task) {
+    const run = vaultQueue.then(task, task);
+    vaultQueue = run.catch(() => {});
+    return run;
+  }
+
   // [P5] 금고 하나 — 받은 회사 키들을 한 비밀번호로 한 번에 저장한다. 금고는 통째로 잠기거나 열려 있다.
   //  - 저장 뒤에도 남는 잠긴 키(받지 않은 회사의 암호문)가 있으면 그 비밀번호가 있어야 한다 — 없거나 틀리면 거절, 저장 값 그대로
   //  - 비밀번호를 넣어 저장하면 평문으로 두었던 다른 회사 키도 같은 비밀번호로 함께 잠근다
@@ -192,6 +211,7 @@
     const targets = Object.keys(filled);
     if (!targets.length) return false;
 
+    const seen = vaultSnapshot();
     const remainingLocked = PROVIDERS.filter((p) => !filled[p] && hasCipher(p));
     const unlockedNow = {};
     if (remainingLocked.length) {
@@ -231,6 +251,8 @@
         memory[p] = unlockedNow[p];
       }
     }
+    // 암호화를 기다리는 사이 다른 창이 금고를 바꿨으면 쓰지 않는다 — 판단한 금고와 쓸 금고가 같을 때만 쓴다
+    if (vaultSnapshot() !== seen) return false;
     applyStorageWrites(localWrites, sessionWrites);
     Object.keys(memory).forEach((p) => {
       decryptedKeys[p] = memory[p];
@@ -244,12 +266,15 @@
     const cleanedPin = (pin || "").trim();
     const locked = PROVIDERS.filter((p) => hasCipher(p));
     if (!locked.length || !cleanedPin) return false;
+    const seen = vaultSnapshot();
     const opened = {};
     for (const p of locked) {
       const k = await decryptKey(p, cleanedPin);
       if (!k) return false;
       opened[p] = k;
     }
+    // 푸는 사이 다른 창이 금고를 바꿨으면 옛 키를 이 창에 남기지 않는다
+    if (vaultSnapshot() !== seen) return false;
     Object.keys(opened).forEach((p) => {
       decryptedKeys[p] = opened[p];
       try {
@@ -2267,12 +2292,12 @@
           clearKey("gemini");
           return false;
         }
-        return saveKeys({ gemini: cleaned }, pin);
+        return inVaultQueue(() => saveKeys({ gemini: cleaned }, pin));
       }
-      return saveKeys(keys, pin);
+      return inVaultQueue(() => saveKeys(keys, pin));
     },
     async unlockWithPin(pin) {
-      return unlockAll(pin);
+      return inVaultQueue(() => unlockAll(pin));
     },
     clearApiKey(provider) {
       clearKey(provider || "gemini");
