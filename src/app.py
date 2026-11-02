@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import date
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import importlib
 import json
 import mimetypes
 import os
@@ -14,6 +13,7 @@ import threading
 from typing import Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
+import src.ai_provider as ai_provider_module
 import src.gemini as gemini_module
 from src.feedback_types import (
     FeedbackRecord,
@@ -40,6 +40,7 @@ from src.vocab_types import VocabCreateRequest, VocabReviewRequest
 
 PUBLIC_DIR = pathlib.Path(__file__).resolve().parent.parent / "public"
 MAX_BODY_BYTES = 32 * 1024  # 32KB 상한으로 비정상 대용량 요청 차단
+FOREIGN_ORIGIN_MESSAGE = "이 서버는 자기 화면에서 온 요청만 받습니다."
 
 
 class FeedbackApp:
@@ -69,9 +70,10 @@ class FeedbackApp:
     def _call_ai(self, req: FeedbackRequest) -> FeedbackResponse:
         if self._custom_ai_fn is not None:
             return self._custom_ai_fn(req)
-        if os.environ.get("DOTENV_AUTORELOAD") == "1":
-            importlib.reload(gemini_module)
-        return gemini_module.generate_feedback(req)
+        # 조각 9(ai-provider-choice): `.env` 의 AI_PROVIDER 로 고른 회사 하나에 보낸다([P1] · [P2]).
+        # 모듈을 다시 읽지(reload) 않는다 — 다시 읽으면 오류 클래스가 새로 생겨 [P4] 의 오류 처리가 어긋난다(PR 1 리뷰 1회차).
+        # `.env` 는 DOTENV_AUTORELOAD 일 때 ai_provider 가 요청마다 다시 읽는다.
+        return ai_provider_module.generate_feedback(req)
 
     def _parse_json_body(
         self, raw_body: bytes
@@ -462,8 +464,20 @@ def create_http_server(
 
             self._serve_static(parsed.path)
 
+        def _reject_foreign_origin(self) -> bool:
+            """[P8] 다른 사이트에서 온 요청(Origin 이 자기 주소와 다름)이면 403 을 보내고 True — 저장도 AI 호출도 하지 않는다."""
+            origin = self.headers.get("Origin")
+            if origin is None:
+                return False
+            if origin == f"http://{self.headers.get('Host', '')}":
+                return False
+            self._send_json(HTTPStatus.FORBIDDEN, {"error": FOREIGN_ORIGIN_MESSAGE})
+            return True
+
         def do_POST(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
+            if self._reject_foreign_origin():
+                return
             raw_body = self._read_request_body()
 
             if parsed.path == "/api/feedback":
@@ -498,6 +512,8 @@ def create_http_server(
 
         def do_DELETE(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
+            if self._reject_foreign_origin():
+                return
             prefix = "/api/vocab/"
             if parsed.path.startswith(prefix):
                 item_id = unquote(parsed.path[len(prefix) :])

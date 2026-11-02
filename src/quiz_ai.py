@@ -1,7 +1,8 @@
-"""조각 8(review-quiz): AI 새 문제 — 퀴즈 전용 지시문 · 스키마로 Gemini 를 한 번 부르고 응답을 검증한다(설계 ③ · Q1 · Q9).
+"""조각 8(review-quiz): AI 새 문제 — 퀴즈 전용 지시문 · 스키마로 AI 를 한 번 부르고 응답을 검증한다(설계 ③ · Q1 · Q9).
 
 첨삭 앵커볼트(`src/gemini.py` 의 SYSTEM_INSTRUCTION · RESPONSE_SCHEMA · build_gemini_payload)는 건드리지 않는다.
-키 읽기 · 모델 후보 · 전송만 빌려 쓴다. AI 새 문제 요청은 이 모듈의 `generate_ai_questions` 한 자리에서만 부른다(설계 ④).
+키 읽기 · 모델 후보 · 전송은 조각 9(ai-provider-choice)부터 `src/ai_provider.py` 가 고른 회사로 맡는다.
+AI 새 문제 요청은 이 모듈의 `generate_ai_questions` 한 자리에서만 부른다(설계 ④).
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import re
 from typing import Any, Callable
 import uuid
 
+import src.ai_provider as ai_provider
 import src.gemini as gemini_module
 from src.feedback_types import FeedbackRecord, ValidationError
 from src.quiz_service import PoolEntry
@@ -138,11 +140,19 @@ def build_quiz_ai_payload(pool: list[PoolEntry], records: list[FeedbackRecord]) 
 
 def parse_ai_questions(raw_response: Any, rng: random.Random | None = None) -> list[QuizQuestion]:
     """Gemini 응답에서 문제를 꺼내 ③ 의 모양으로 검증한다. 틀린 문제는 그 문제만 버리고, 앞의 3개만 쓴다."""
-    generator = rng or random.Random()
     try:
         text = raw_response["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError, TypeError):
+        return []
+    return parse_ai_questions_text(text, rng=rng)
+
+
+def parse_ai_questions_text(text: Any, rng: random.Random | None = None) -> list[QuizQuestion]:
+    """어느 회사에서 왔든 꺼낸 JSON 글을 ③ 의 모양으로 검증한다(조각 ai-provider-choice [P3])."""
+    generator = rng or random.Random()
+    try:
         data = json.loads(text)
-    except (KeyError, IndexError, TypeError, json.JSONDecodeError):
+    except (TypeError, json.JSONDecodeError):
         return []
     items = data.get("questions") if isinstance(data, dict) else None
     if not isinstance(items, list):
@@ -198,27 +208,35 @@ def parse_ai_questions(raw_response: Any, rng: random.Random | None = None) -> l
     return questions
 
 
+def quiz_ai_call(pool: list[PoolEntry], records: list[FeedbackRecord]) -> ai_provider.AiCall:
+    """퀴즈 AI 요청 — 지시문 · 스키마 · 사용자 글 · 온도는 `build_quiz_ai_payload` 와 같은 값이다."""
+    payload = build_quiz_ai_payload(pool, records)
+    return ai_provider.AiCall(
+        system=QUIZ_SYSTEM_INSTRUCTION,
+        user_text=payload["contents"][0]["parts"][0]["text"],
+        schema=QUIZ_RESPONSE_SCHEMA,
+        schema_name="quiz_questions",
+        temperature=QUIZ_AI_TEMPERATURE,
+    )
+
+
 def generate_ai_questions(
     pool: list[PoolEntry],
     records: list[FeedbackRecord],
     transport: Callable[[str, dict[str, str], bytes], dict[str, Any]] | None = None,
     rng: random.Random | None = None,
 ) -> AiQuestionsResult:
-    """AI 새 문제 요청 — 키는 헤더(x-goog-api-key)로만 보내고, 실패하면 빈 목록과 상태를 돌려준다(Q9)."""
+    """AI 새 문제 요청 — 고른 회사 하나에 키를 머리글로만 보내고, 실패하면 빈 목록과 상태를 돌려준다(Q9 · 조각 ai-provider-choice [P2] · [P4])."""
     if len(pool) < CHOICE_COUNT:
         return AiQuestionsResult([], "failed")
+    provider = ai_provider.get_provider()
     try:
-        api_key = gemini_module.get_api_key()
-    except gemini_module.GeminiServiceError:
+        api_key = ai_provider.get_api_key(provider)
+    except ai_provider.AiServiceError:
         return AiQuestionsResult([], "no_key")
-    body = json.dumps(build_quiz_ai_payload(pool, records), ensure_ascii=False).encode("utf-8")
     try:
-        if transport is not None:
-            headers = {"Content-Type": "application/json; charset=utf-8", "x-goog-api-key": api_key}
-            raw = transport(gemini_module.GEMINI_ENDPOINT, headers, body)
-        else:
-            raw = gemini_module._send_with_auto_auth(api_key, body)
+        text = ai_provider.request_text(provider, api_key, quiz_ai_call(pool, records), transport)
     except Exception:  # 연결 · 한도 · 응답 오류 — 퀴즈는 내 기록으로 이어간다
         return AiQuestionsResult([], "failed")
-    questions = parse_ai_questions(raw, rng=rng)
+    questions = parse_ai_questions_text(text, rng=rng)
     return AiQuestionsResult(questions, "ok" if questions else "failed")

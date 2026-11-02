@@ -288,7 +288,7 @@ def _build_local_coach_feedback(req: FeedbackRequest) -> FeedbackResponse:
         {
             "corrected": replaced[0].upper() + replaced[1:] if replaced else raw,
             "explanation": (
-                f"[내장 체험 모드 — Google AI 크레딧 연결 전 자동 동작] 입력하신 문장('{raw}')의 한국어/어색한 표현을 "
+                f"[내장 체험 모드 — AI 크레딧 소진 · 한도 초과 때 자동 동작] 입력하신 문장('{raw}')의 한국어/어색한 표현을 "
                 "자연스러운 영어 어순과 동사구로 다듬었습니다. 첫 글자 대문자와 문장 부호를 함께 교정했습니다."
             ),
             "alternatives": [
