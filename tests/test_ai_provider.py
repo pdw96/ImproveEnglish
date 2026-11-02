@@ -26,8 +26,8 @@ from unittest import mock
 import src.ai_provider as ai_provider
 import src.gemini as gemini_module
 import src.quiz_ai as quiz_ai
-from src.app import FOREIGN_ORIGIN_MESSAGE, FeedbackApp, create_http_server
-from src.feedback_types import FeedbackRequest
+from src.app import FOREIGN_HOST_MESSAGE, FOREIGN_ORIGIN_MESSAGE, FeedbackApp, create_http_server
+from src.feedback_types import FeedbackRequest, FeedbackResponse
 from src.history_store import HistoryStore
 from src.quiz_ai import AiQuestionsResult
 from src.quiz_service import build_expression_pool
@@ -474,11 +474,15 @@ class TestP8Origin(unittest.TestCase):
     def snapshot(self) -> dict[str, str]:
         return {p.name: p.read_text(encoding="utf-8") for p in sorted(self.base.iterdir())}
 
-    def request(self, method: str, path: str, origin: str | None, body: dict | None = None) -> tuple[int, dict]:
+    def request(
+        self, method: str, path: str, origin: str | None, body: dict | None = None, host: str | None = None
+    ) -> tuple[int, dict]:
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         headers = {"Content-Type": "application/json"}
         if origin is not None:
             headers["Origin"] = origin
+        if host is not None:
+            headers["Host"] = host  # 이름 풀이는 127.0.0.1 그대로, Host 머리글만 바꾼다(DNS 다시 묶기 흉내)
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         conn.request(method, path, body=payload, headers=headers)
         res = conn.getresponse()
@@ -516,7 +520,38 @@ class TestP8Origin(unittest.TestCase):
         saved = json.loads((self.base / "history.json").read_text(encoding="utf-8"))
         self.assertIn(record["id"], [r["id"] for r in saved])
         status3, _ = self.request("GET", "/api/history", "http://evil.example")
-        self.assertEqual(status3, 200)  # 읽기는 막지 않는다 — 브라우저가 다른 사이트에 응답을 보여 주지 않는다
+        # 자기 주소(Host)로 온 읽기는 Origin 을 보지 않는다 — 브라우저가 다른 출처 페이지에 응답을 보여 주지 않는다.
+        # 다른 사이트가 이름 풀이를 바꿔 같은 출처로 오는 길(DNS 다시 묶기)은 Host 검사가 막는다(아래 시험)
+        self.assertEqual(status3, 200)
+        status4, _ = self.request("GET", "/api/history", None, host=f"localhost:{self.port}")
+        self.assertEqual(status4, 200)
+
+    def test_p8_rebinding_host_rejected_for_every_method(self) -> None:
+        """[P8] 거절 — DNS 다시 묶기: 다른 사이트 이름을 Host · Origin 에 함께 맞춰 와도(이름 풀이만 127.0.0.1) 읽기 · 저장 ·
+        지우기 · 화면 파일 모두 403 이고, 저장 파일이 그대로이며 AI 를 부르지 않는다(닫기 전 감사 NC-14)."""
+        feedback = {"text": "I want to 퇴근하다 early", "inputMode": "text"}
+        before = self.snapshot()
+        for name in ("evil.example", "127.0.0.1.evil.example", "localhost.evil.example"):
+            host = f"{name}:{self.port}"
+            for method, path, body in (
+                ("GET", "/api/history", None),
+                ("GET", "/api/vocab", None),
+                ("GET", "/", None),
+                ("POST", "/api/feedback", feedback),
+                ("POST", "/api/quiz/today", {}),
+                ("POST", "/api/vocab", {"expression": "x", "meaning": "y"}),
+                ("DELETE", "/api/vocab/v-1", None),
+            ):
+                with self.subTest(host=host, method=method, path=path):
+                    status, data = self.request(method, path, f"http://{host}", body, host=host)
+                    self.assertEqual(status, 403)
+                    self.assertEqual(data, {"error": FOREIGN_HOST_MESSAGE})
+        for host in (f"127.0.0.1:{self.port + 1}", "127.0.0.1", ""):
+            with self.subTest(host=host):
+                status, data = self.request("POST", "/api/feedback", None, feedback, host=host)
+                self.assertEqual(status, 403)
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual((self.ai_calls, self.quiz_ai_calls), (0, 0))
 
 
 class TestP9Anchor(unittest.TestCase):
@@ -864,7 +899,7 @@ class TestPhoneAiCalls(unittest.TestCase):
         """[P4] 회사마다 호출 실패 · 막힘 · 거절 · 잘림 · 응답 꼴 밖이면 첨삭은 내장 코치(설명 끝에 「닿지 못해」 한 줄),
         퀴즈는 내 기록 + 지금의 안내. 그 회사의 모델 후보만 부르고 다른 회사는 부르지 않는다."""
         failures = self.out["pr3Failures"]
-        self.assertEqual(len(failures), 3 * 7 + 4)
+        self.assertEqual(len(failures), 3 * 9 + 4)
         for name, scene in failures.items():
             provider = name.split(":")[0]
             with self.subTest(case=name):
@@ -879,6 +914,17 @@ class TestPhoneAiCalls(unittest.TestCase):
                 self.assertEqual(set(scene["quiz"]["sources"]), {"mine"})
                 self.assertEqual(len(scene["calls"]), 2 * len(ai_provider.MODEL_CANDIDATES[provider]))
                 self.assertTrue(all(url.startswith(HOSTS[provider]) for url in scene["calls"]), scene["calls"])
+
+    def test_p3_phone_accepted_feedback_is_trimmed_to_known_fields(self) -> None:
+        """[P3] 폰 — 검사를 지난 응답은 서버(FeedbackResponse)처럼 앞뒤 공백을 지우고 정해진 칸만 남긴다. 회사 이름 같은 덧붙은 칸은
+        기록에 들지 않는다(닫기 전 감사 NC-15)."""
+        scene = self.out["pr3Normalized"]
+        self.assertEqual(scene["feedback"]["body"]["feedback"], scene["expected"])
+        self.assertEqual(json.loads(scene["history"])[0]["feedback"], scene["expected"])
+        self.assertEqual(
+            scene["expected"],
+            FeedbackResponse.from_dict(scene["expected"]).to_dict(),
+        )
 
     def test_p4_phone_no_key_calls_nobody(self) -> None:
         """[P4] 고른 회사의 키가 없으면 다른 두 회사 키가 있어도 아무 데도 부르지 않는다 — 내장 코치 · 키 없음 안내."""

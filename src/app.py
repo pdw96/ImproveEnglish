@@ -41,6 +41,8 @@ from src.vocab_types import VocabCreateRequest, VocabReviewRequest
 PUBLIC_DIR = pathlib.Path(__file__).resolve().parent.parent / "public"
 MAX_BODY_BYTES = 32 * 1024  # 32KB 상한으로 비정상 대용량 요청 차단
 FOREIGN_ORIGIN_MESSAGE = "이 서버는 자기 화면에서 온 요청만 받습니다."
+# [P8] 닫기 전 감사 NC-14 — 요청의 Host 가 이 PC 주소(127.0.0.1 · localhost)가 아니면(DNS 다시 묶기) 모든 요청을 거절한다
+FOREIGN_HOST_MESSAGE = "이 서버는 이 PC 의 주소(127.0.0.1 · localhost)로 연 화면에서만 씁니다."
 
 
 class FeedbackApp:
@@ -60,7 +62,8 @@ class FeedbackApp:
         self.vocab_store = vocab_store or VocabStore()
         self.routine_store = routine_store or RoutineStore()
         self.quiz_store = quiz_store or QuizStore()
-        # AI 새 문제 요청은 이 한 자리에서만 부른다(설계 ④ — 다음 조각 ai-provider-choice 가 갈아 끼울 자리)
+        # AI 새 문제 요청은 이 한 자리에서만 부른다(조각 8(review-quiz) 설계 ④). 고른 회사로 보내는 것은 그 안의
+        # quiz_ai.generate_ai_questions 가 맡는다(조각 9(ai-provider-choice))
         self._quiz_ai_fn = quiz_ai_fn or generate_ai_questions
         # 오늘 세트 만들기(AI 호출 포함)는 한 번에 하나 — 겹친 [퀴즈 시작] 이 AI 를 두 번 부르지 않게([Q4] · [Q9])
         self._quiz_create_lock = threading.Lock()
@@ -421,8 +424,24 @@ def create_http_server(
                 length = 0
             return self.rfile.read(max(0, min(length, MAX_BODY_BYTES + 1)))
 
+        def _reject_foreign_host(self) -> bool:
+            """[P8] Host 가 이 서버의 PC 주소(127.0.0.1 · localhost · 묶인 주소, 묶인 포트)가 아니면 403 을 보내고 True.
+            다른 사이트가 이름 풀이를 127.0.0.1 로 바꿔(DNS 다시 묶기) Origin 과 Host 를 함께 자기 이름으로 맞춰 와도 여기서 막힌다
+            — 읽기 · 저장 · AI 호출 모두 하지 않는다(닫기 전 감사 NC-14)."""
+            bound_host, port = self.server.server_address[:2]
+            names = {"127.0.0.1", "localhost", str(bound_host).lower()}
+            allowed = {f"{name}:{port}" for name in names}
+            if port == 80:
+                allowed |= names
+            if self.headers.get("Host", "").strip().lower() in allowed:
+                return False
+            self._send_json(HTTPStatus.FORBIDDEN, {"error": FOREIGN_HOST_MESSAGE})
+            return True
+
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
+            if self._reject_foreign_host():
+                return
             if parsed.path == "/api/history":
                 status, data = active_app.handle_get_history()
                 self._send_json(status, data)
@@ -476,7 +495,7 @@ def create_http_server(
 
         def do_POST(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
-            if self._reject_foreign_origin():
+            if self._reject_foreign_host() or self._reject_foreign_origin():
                 return
             raw_body = self._read_request_body()
 
@@ -512,7 +531,7 @@ def create_http_server(
 
         def do_DELETE(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
-            if self._reject_foreign_origin():
+            if self._reject_foreign_host() or self._reject_foreign_origin():
                 return
             prefix = "/api/vocab/"
             if parsed.path.startswith(prefix):
