@@ -58,10 +58,17 @@ function openWindow(local = {}, session = {}, failOn = null) {
   };
   ctx.window = ctx;
   ctx.location = { origin: "http://localhost" };
-  ctx.fetch = async () => new Response("{}", { status: 500 });
+  // 엔진이 밖으로 내보내는 요청(AI 회사)을 남긴다 — PR 3 시험이 「어디로 무엇을 보냈나」를 본다
+  const calls = [];
+  ctx.fetch = async (input, init = {}) => {
+    const url = typeof input === "string" ? input : input.url;
+    calls.push({ url, method: init.method || "GET", headers: { ...(init.headers || {}) }, body: init.body || "" });
+    if (ctx.aiResponder) return ctx.aiResponder(url, init);
+    return new Response("{}", { status: 500 });
+  };
   vm.createContext(ctx);
   vm.runInContext(ENGINE_SRC, ctx);
-  return { ctx, engine: ctx.ImproveEnglishStandalone };
+  return { ctx, engine: ctx.ImproveEnglishStandalone, calls };
 }
 
 function state(win) {
@@ -253,6 +260,176 @@ let twoLocked; // gemini · openai 를 PIN 으로 잠근 기기
   await w.engine.saveApiKeyWithPin({ anthropic: KEYS.anthropic }, PIN);
   w.engine.setProvider("openai");
   out.p7 = { backupText: JSON.stringify(w.engine.exportBackupPayload()), ...state(w) };
+}
+
+
+// ── PR 3 폰 앱 호출 — 첨삭 · 퀴즈 AI 를 고른 회사로(P2 · P3 · P4 · P7 · P9) ──
+const PROVIDER_IDS = ["gemini", "openai", "anthropic"];
+const FEEDBACK = {
+  corrected: "I'd like to get off work early today.",
+  explanation: "'퇴근하다'는 'get off work' 로 씁니다.",
+  alternatives: [
+    { expression: "I'm hoping to head out early today.", nuance: "부드럽게 양해를 구할 때" },
+    { expression: "Could I leave a bit early today?", nuance: "허락을 구할 때" },
+  ],
+  keyExpressions: [{ expression: "get off work", meaning: "퇴근하다", example: "I get off work at six." }],
+};
+const QUIZ_WORDS = [
+  "give up", "look forward to", "run into", "figure out", "put off", "come up with",
+  "get along", "hang out", "catch up", "turn down", "bring up",
+];
+const VOCAB = QUIZ_WORDS.map((expression, i) => ({
+  id: `v-${i}`,
+  expression,
+  meaning: `뜻 ${i}`,
+  example: "",
+  box: 0,
+  reviewCount: 0,
+  nextReviewDate: "2026-10-01",
+  createdAt: "2026-10-01T00:00:00Z",
+  lastReviewedAt: null,
+}));
+const quizItem = (expression) => ({
+  question: "I really want to ____ this habit.",
+  choices: [expression, "take after", "look into", "run out of"],
+  answerIndex: 0,
+  explanation: "정답 표현이 문장의 뜻에 맞는다.",
+  expression,
+  meaning: "뜻",
+  example: `I really want to ${expression} this habit.`,
+});
+const QUIZ_REPLY = { questions: [quizItem("give up"), quizItem("figure out"), quizItem("put off")] };
+
+// 회사마다의 응답 꼴로 JSON 글을 싼다(③ 의 꺼내는 자리)
+function wrap(provider, text, overrides = {}) {
+  if (provider === "openai") {
+    return { choices: [{ message: { role: "assistant", content: text, refusal: null, ...overrides } }] };
+  }
+  if (provider === "anthropic") {
+    return {
+      content: [
+        { type: "thinking", thinking: "짧게 생각한다", signature: "sig" },
+        { type: "text", text },
+      ],
+      stop_reason: "end_turn",
+      ...overrides,
+    };
+  }
+  return { candidates: [{ content: { parts: [{ text }] } }] };
+}
+const okReply = (provider, payload) => new Response(JSON.stringify(wrap(provider, JSON.stringify(payload))), { status: 200 });
+const isQuizCall = (init) => String(init.body || "").includes("퀴즈 출제자");
+
+// 세 회사 키를 모두 평문으로 넣은 기기에서 provider 를 고른 창
+function aiWindow(provider, { keys = KEYS, extra = {} } = {}) {
+  const local = { ie_ai_provider: provider, ie_vocab_items_v1: JSON.stringify(VOCAB), ...extra };
+  for (const p of PROVIDER_IDS) if (keys[p]) local[`ie_${p}_api_key`] = keys[p];
+  return openWindow(local, {});
+}
+async function api(win, method, url, body) {
+  const init = { method, headers: { "Content-Type": "application/json" } };
+  if (body !== undefined) init.body = JSON.stringify(body);
+  const res = await win.ctx.window.fetch(url, init);
+  return { status: res.status, body: await res.json() };
+}
+const feedbackOf = (win) => api(win, "POST", "/api/feedback", { text: "오늘 일찍 퇴근하다 하고 싶어요", inputMode: "text" });
+const quizOf = (win) => api(win, "POST", "/api/quiz/today");
+const quizSummary = (res) => ({
+  status: res.status,
+  aiCount: res.body.aiCount,
+  aiNotice: res.body.aiNotice || null,
+  sources: res.body.quiz ? res.body.quiz.questions.map((q) => q.source) : null,
+  aiExpressions: res.body.quiz ? res.body.quiz.questions.filter((q) => q.source === "ai").map((q) => q.expression) : [],
+});
+
+// P2 · P3 · P7 — 회사마다 성공: 첨삭과 퀴즈가 고른 회사 하나로만 간다
+out.pr3Success = {};
+for (const provider of PROVIDER_IDS) {
+  const w = aiWindow(provider);
+  w.ctx.aiResponder = async (url, init) => okReply(provider, isQuizCall(init) ? QUIZ_REPLY : FEEDBACK);
+  const fb = await feedbackOf(w);
+  const qz = await quizOf(w);
+  out.pr3Success[provider] = {
+    feedback: fb,
+    quiz: quizSummary(qz),
+    calls: w.calls,
+    history: w.ctx.localStorage.getItem("ie_feedback_history_v1"),
+    quizStored: w.ctx.localStorage.getItem("ie_quiz_v1"),
+    backupText: JSON.stringify(w.engine.exportBackupPayload()),
+  };
+}
+
+// P2 — 모델 후보: 그 회사 안에서만 다음 후보로 넘어간다(OpenAI 첫 모델 404 → 둘째)
+{
+  const w = aiWindow("openai");
+  w.ctx.aiResponder = async (url, init) =>
+    JSON.parse(init.body).model === "gpt-5.4-mini"
+      ? new Response('{"error":{"message":"model not found"}}', { status: 404 })
+      : okReply("openai", FEEDBACK);
+  const fb = await feedbackOf(w);
+  out.pr3OpenAiFallback = { feedback: fb, calls: w.calls };
+}
+
+// P4 — 실패하면 지금처럼(첨삭 = 내장 코치, 퀴즈 = 내 기록 + 지금의 안내). 다른 회사를 부르지 않는다
+const FAILURES = {
+  http429: () => new Response('{"error":{"message":"rate limited"}}', { status: 429 }),
+  http402: () => new Response('{"error":{"message":"billing"}}', { status: 402 }),
+  http500: () => new Response("{}", { status: 500 }),
+  network: () => {
+    throw new TypeError("Failed to fetch"); // 오프라인 · 브라우저 직접 호출 막힘(CORS)
+  },
+  notJson: (provider) => new Response(JSON.stringify(wrap(provider, "not json")), { status: 200 }),
+  badShape: (provider, init) =>
+    new Response(
+      JSON.stringify(
+        wrap(provider, JSON.stringify(isQuizCall(init) ? { questions: [] } : { ...FEEDBACK, alternatives: [FEEDBACK.alternatives[0]] }))
+      ),
+      { status: 200 }
+    ),
+  wrongForm: () => new Response(JSON.stringify({ unexpected: true }), { status: 200 }),
+};
+const PROVIDER_FAILURES = {
+  openaiRefusal: ["openai", (p, init) => new Response(JSON.stringify(wrap("openai", JSON.stringify(isQuizCall(init) ? QUIZ_REPLY : FEEDBACK), { refusal: "I can't help with that." })), { status: 200 })],
+  anthropicMaxTokens: ["anthropic", (p, init) => new Response(JSON.stringify(wrap("anthropic", JSON.stringify(isQuizCall(init) ? QUIZ_REPLY : FEEDBACK), { stop_reason: "max_tokens" })), { status: 200 })],
+  anthropicRefusal: ["anthropic", (p, init) => new Response(JSON.stringify(wrap("anthropic", JSON.stringify(isQuizCall(init) ? QUIZ_REPLY : FEEDBACK), { stop_reason: "refusal" })), { status: 200 })],
+  anthropicNoText: ["anthropic", () => new Response(JSON.stringify({ content: [{ type: "thinking", thinking: "..." }], stop_reason: "end_turn" }), { status: 200 })],
+};
+async function failScene(provider, responder) {
+  const w = aiWindow(provider);
+  w.ctx.aiResponder = async (url, init) => responder(provider, init);
+  const fb = await feedbackOf(w);
+  const qz = await quizOf(w);
+  return { feedback: fb, quiz: quizSummary(qz), calls: w.calls.map((c) => c.url) };
+}
+out.pr3Failures = {};
+for (const provider of PROVIDER_IDS) {
+  for (const [name, responder] of Object.entries(FAILURES)) {
+    out.pr3Failures[`${provider}:${name}`] = await failScene(provider, responder);
+  }
+}
+for (const [name, [provider, responder]] of Object.entries(PROVIDER_FAILURES)) {
+  out.pr3Failures[`${provider}:${name}`] = await failScene(provider, responder);
+}
+
+// P4 — 고른 회사의 키가 없거나 잠겨 있으면 아무 데도 부르지 않는다(다른 두 회사 키는 있다)
+out.pr3NoKey = {};
+for (const provider of PROVIDER_IDS) {
+  const others = { ...KEYS, [provider]: "" };
+  const w = aiWindow(provider, { keys: others });
+  w.ctx.aiResponder = async (url, init) => okReply(provider, isQuizCall(init) ? QUIZ_REPLY : FEEDBACK);
+  const fb = await feedbackOf(w);
+  const qz = await quizOf(w);
+  out.pr3NoKey[provider] = { feedback: fb, quiz: quizSummary(qz), calls: w.calls.map((c) => c.url) };
+}
+{
+  // 잠긴 금고(gemini · openai) — openai 를 고르고 풀지 않은 창은 부르지 않고, 푼 창은 openai 로 간다
+  const w = openWindow({ ...twoLocked, ie_ai_provider: "openai", ie_vocab_items_v1: JSON.stringify(VOCAB) }, {});
+  w.ctx.aiResponder = async (url, init) => okReply("openai", isQuizCall(init) ? QUIZ_REPLY : FEEDBACK);
+  const lockedFb = await feedbackOf(w);
+  const lockedCalls = w.calls.length;
+  await w.engine.unlockWithPin(PIN);
+  const unlockedFb = await feedbackOf(w);
+  out.pr3Locked = { lockedFb, lockedCalls, unlockedFb, calls: w.calls };
 }
 
 process.stdout.write(JSON.stringify(out));

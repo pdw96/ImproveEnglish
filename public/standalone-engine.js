@@ -5,8 +5,9 @@
  *   조각 ai-feedback · vocab-review · study-routine · daily-mission · review-quiz 의
  *   모든 `/api/*` 요청(오늘의 퀴즈 `/api/quiz/today` · `/api/quiz/attempt` · `/api/quiz/scores` 포함)을
  *   브라우저 내부(`localStorage`)에서 동일 규약으로 즉시 처리한다. 백업 파일 내보내기 · 불러오기(퀴즈 기록 칸 포함)도 맡는다.
- * - 개인 Gemini API 키는 코드에 하드코딩하지 않고, 사용자가 설정 탭에서 입력한 경우에만
- *   기기 내 `localStorage`에서 읽어 `x-goog-api-key` 헤더로 Gemini API를 직접 호출한다([S2] 보장).
+ * - 개인 API 키(Gemini · ChatGPT · Claude)는 코드에 하드코딩하지 않고, 사용자가 설정 탭에서 입력한 경우에만
+ *   기기 내 `localStorage`에서 읽어 「지금 쓸 AI」 하나를 머리글(Gemini `x-goog-api-key` · OpenAI `Authorization` ·
+ *   Anthropic `x-api-key`)로 직접 호출한다([S2] · 조각 ai-provider-choice [P2] · [P7] 보장).
  * - API 키가 없거나 오프라인일 때는 내장 스마트 코치가 즉시 3단 첨삭을 반환한다.
  */
 
@@ -757,7 +758,7 @@
       corrected: capitalized,
       explanation:
         `[온디바이스 스마트 코치] 입력하신 문장('${raw}')의 한국어/어색한 표현을 자연스러운 영어 어순과 동사구로 다듬었습니다. ` +
-        `([앱 설정 · 백업] 탭에서 개인 Gemini API 키를 등록하면 실시간 Gemini AI 모델 첨삭으로도 전환됩니다.)`,
+        `([앱 설정 · 백업] 탭에서 고른 AI(Gemini · ChatGPT · Claude)의 개인 API 키를 등록하면 실시간 AI 첨삭으로도 전환됩니다.)`,
       alternatives: [
         {
           expression: `I was wondering if you could check this: ${capitalized}`,
@@ -789,72 +790,185 @@
     };
   }
 
-  async function callDirectGeminiOrCoach(text, inputMode, rawFetch) {
-    const savedKey = usableKey("gemini");
-    if (!savedKey) {
-      return buildLocalCoachFeedback(text);
-    }
+  // ── 조각 ai-provider-choice PR 3: 첨삭 · 퀴즈 AI 를 고른 회사 하나로 보내는 한 자리(서버 src/ai_provider.py 와 같은 꼴) ──
+  // 지시문 · 응답 스키마 상수는 그대로 받아 회사 요청 꼴로만 옮긴다 — Gemini 요청은 이 조각 전과 글자까지 같다([P9] · 앵커볼트)
+  const AI_MODEL_CANDIDATES = {
+    gemini: GEMINI_FALLBACK_MODELS,
+    openai: ["gpt-5.4-mini", "gpt-5-mini"],
+    anthropic: ["claude-haiku-5-5"],
+  };
+  const OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+  const ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages";
+  const ANTHROPIC_VERSION = "2026-10-21";
+  const ANTHROPIC_MAX_TOKENS = 8000;
+  const ANTHROPIC_EFFORT = "low";
 
-    const modeLabel =
-      inputMode === "voice" ? "음성(마이크) 입력 문장" : "키보드 입력 문장";
-    const bodyObj = {
-      systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: `[${modeLabel}]\n${text}` }],
+  // Gemini 꼴 응답 스키마를 OpenAI · Anthropic 의 JSON 스키마 꼴로 — 타입 이름 소문자, 객체마다 additionalProperties: false,
+  // 배열 개수 제한(minItems · maxItems)은 뺀다. 개수는 받은 뒤 지금의 응답 검사가 문다([P3])
+  function toJsonSchema(schema) {
+    const out = {};
+    Object.keys(schema).forEach((key) => {
+      const value = schema[key];
+      if (key === "minItems" || key === "maxItems") return;
+      if (key === "type" && typeof value === "string") out.type = value.toLowerCase();
+      else if (key === "properties" && value && typeof value === "object") {
+        out.properties = {};
+        Object.keys(value).forEach((name) => {
+          out.properties[name] = toJsonSchema(value[name]);
+        });
+      } else if (key === "items" && value && typeof value === "object") out.items = toJsonSchema(value);
+      else out[key] = value;
+    });
+    if (out.type === "object") out.additionalProperties = false;
+    return out;
+  }
+
+  // 회사 요청 꼴(주소 · 머리글 · 본문) — 키는 머리글에만 넣는다([P7]). Claude 는 브라우저 직접 호출 머리글이 있어야 받는다
+  function buildAiRequest(provider, model, apiKey, call) {
+    if (provider === "openai") {
+      return {
+        url: OPENAI_ENDPOINT,
+        headers: { "Content-Type": "application/json; charset=utf-8", Authorization: `Bearer ${apiKey}` },
+        body: {
+          model,
+          messages: [
+            { role: "system", content: call.system },
+            { role: "user", content: call.userText },
+          ],
+          response_format: {
+            type: "json_schema",
+            json_schema: { name: call.schemaName, strict: true, schema: toJsonSchema(call.schema) },
+          },
         },
-      ],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        temperature: 0.3,
+      };
+    }
+    if (provider === "anthropic") {
+      return {
+        url: ANTHROPIC_ENDPOINT,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "x-api-key": apiKey,
+          "anthropic-version": ANTHROPIC_VERSION,
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: {
+          model,
+          max_tokens: ANTHROPIC_MAX_TOKENS,
+          system: call.system,
+          messages: [{ role: "user", content: call.userText }],
+          output_config: {
+            effort: ANTHROPIC_EFFORT,
+            format: { type: "json_schema", schema: toJsonSchema(call.schema) },
+          },
+        },
+      };
+    }
+    // Gemini — 이 조각 전 요청과 같은 꼴 · 같은 값. URL 쿼리 대신 x-goog-api-key 헤더로만 키를 보낸다([S2] · [Q9])
+    return {
+      url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      headers: { "Content-Type": "application/json; charset=utf-8", "x-goog-api-key": apiKey },
+      body: {
+        systemInstruction: { parts: [{ text: call.system }] },
+        contents: [{ role: "user", parts: [{ text: call.userText }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: call.schema,
+          temperature: call.temperature,
+        },
       },
     };
+  }
 
-    for (const modelName of GEMINI_FALLBACK_MODELS) {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
+  // 회사 응답에서 JSON 글을 꺼낸다(③). 그 밖의 모양 · 거절(OpenAI refusal) · 잘림(Claude stop_reason ≠ end_turn)은 null
+  function extractAiText(provider, raw) {
+    try {
+      let text = null;
+      if (provider === "openai") {
+        const message = raw.choices[0].message;
+        if (message.refusal) return null;
+        text = message.content;
+      } else if (provider === "anthropic") {
+        if (raw.stop_reason !== "end_turn") return null;
+        const block = raw.content.find((b) => b && b.type === "text");
+        text = block ? block.text : null;
+      } else {
+        text = raw.candidates[0].content.parts[0].text;
+      }
+      return typeof text === "string" && text.trim() ? text : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // 고른 회사 하나에만 보낸다([P2]) — 키를 넣어 둔 다른 회사로 넘기지 않는다. 그 회사의 모델 후보는 지금 Gemini 처럼
+  // 어느 실패든 다음 후보로 넘어간다. accept 가 꺼낸 글을 검사해 쓸 값을 돌려주면 끝, 못 쓰면(null) 다음 후보.
+  // 돌려주는 것: { status: "ok", value } · { status: "no_key" }(키 없음 · 금고 잠김) · { status: "failed" }
+  async function requestChosenAi(call, accept, rawFetch) {
+    const provider = getChosenProvider();
+    const apiKey = usableKey(provider);
+    if (!apiKey) return { status: "no_key", provider };
+    for (const model of AI_MODEL_CANDIDATES[provider]) {
+      const req = buildAiRequest(provider, model, apiKey, call);
       try {
-        // URL 쿼리 파라미터 대신 x-goog-api-key 헤더로만 전송([S2] 보장)
-        const res = await rawFetch(endpoint, {
+        const res = await rawFetch(req.url, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json; charset=utf-8",
-            "x-goog-api-key": savedKey,
-          },
-          body: JSON.stringify(bodyObj),
+          headers: req.headers,
+          body: JSON.stringify(req.body),
         });
-        if (!res.ok) {
-          continue;
-        }
-        const rawJson = await res.json();
-        const firstText =
-          rawJson &&
-          rawJson.candidates &&
-          rawJson.candidates[0] &&
-          rawJson.candidates[0].content &&
-          rawJson.candidates[0].content.parts &&
-          rawJson.candidates[0].content.parts[0] &&
-          rawJson.candidates[0].content.parts[0].text;
-        if (!firstText) continue;
-        const parsed = JSON.parse(firstText);
-        if (
-          parsed &&
-          typeof parsed.corrected === "string" &&
-          typeof parsed.explanation === "string" &&
-          Array.isArray(parsed.alternatives) &&
-          parsed.alternatives.length >= 2 &&
-          Array.isArray(parsed.keyExpressions) &&
-          parsed.keyExpressions.length >= 1
-        ) {
-          return parsed;
-        }
+        if (!res.ok) continue;
+        const text = extractAiText(provider, await res.json());
+        if (!text) continue;
+        const value = accept(text);
+        if (value) return { status: "ok", value, provider };
       } catch (_) {
-        // 오프라인이거나 네트워크 오류 시 내장 스마트 코치로 안전하게 폴백
+        // 오프라인 · 브라우저 직접 호출 막힘(CORS) · 응답 오류 — 다음 후보, 다 실패하면 부르는 쪽이 지금처럼 이어간다([P4])
       }
     }
+    return { status: "failed", provider };
+  }
 
-    return buildLocalCoachFeedback(text);
+  // 첨삭 응답 검사 — 이 조각 전 엔진의 검사와 같다([P3])
+  function acceptFeedbackText(text) {
+    const parsed = JSON.parse(text);
+    if (
+      parsed &&
+      typeof parsed.corrected === "string" &&
+      typeof parsed.explanation === "string" &&
+      Array.isArray(parsed.alternatives) &&
+      parsed.alternatives.length >= 2 &&
+      Array.isArray(parsed.keyExpressions) &&
+      parsed.keyExpressions.length >= 1
+    ) {
+      return parsed;
+    }
+    return null;
+  }
+
+  // 첨삭 — 고른 AI 로 받고, 키 없음 · 금고 잠김 · 실패면 내장 스마트 코치([P4] — 지금과 같음)
+  async function callChosenAiOrCoach(text, inputMode, rawFetch) {
+    const modeLabel =
+      inputMode === "voice" ? "음성(마이크) 입력 문장" : "키보드 입력 문장";
+    const result = await requestChosenAi(
+      {
+        system: SYSTEM_INSTRUCTION,
+        userText: `[${modeLabel}]\n${text}`,
+        schema: RESPONSE_SCHEMA,
+        schemaName: "english_feedback",
+        temperature: 0.3,
+      },
+      acceptFeedbackText,
+      rawFetch
+    );
+    if (result.status === "ok") return result.value;
+    const coach = buildLocalCoachFeedback(text);
+    // 키는 있는데 닿지 못했으면(막힘 · 실패 · 응답 꼴 밖) 그 까닭을 한 줄 덧붙인다 — 저자 판정(2026-11-02, PR 3 폰 ChatGPT)
+    if (result.status === "failed") {
+      coach.explanation += ` (${aiUnreachedNotice(result.provider)})`;
+    }
+    return coach;
+  }
+  function aiUnreachedNotice(provider) {
+    return `고른 AI(${PROVIDER_LABELS[provider]})에 닿지 못해 내장 스마트 코치가 답했습니다.`;
   }
 
   function calculateStreaksJs(studiedDatesSet, todayStr) {
@@ -1502,11 +1616,11 @@
     return quizLoose(question.replace(QUIZ_BLANK, answer)) === quizLoose(example);
   }
 
-  // Gemini 응답에서 문제를 꺼내 ③ 의 모양으로 검증 — 틀린 문제는 그 문제만 버리고 앞의 3개만 쓴다
-  function parseAiQuestions(rawJson) {
+  // AI 응답 글(고른 회사에서 꺼낸 JSON 글)에서 문제를 꺼내 ③ 의 모양으로 검증 — 틀린 문제는 그 문제만 버리고 앞의 3개만 쓴다
+  function parseAiQuestions(text) {
     let data;
     try {
-      data = JSON.parse(rawJson.candidates[0].content.parts[0].text);
+      data = JSON.parse(text);
     } catch (_) {
       return [];
     }
@@ -1543,8 +1657,6 @@
 
   async function callQuizAi(pool, historyRecords, rawFetch) {
     if (pool.length < QUIZ_CHOICES) return { questions: [], status: "failed" };
-    const savedKey = usableKey("gemini");
-    if (!savedKey) return { questions: [], status: "no_key" };
 
     const lines = ["[배운 표현]"];
     pool.slice(0, QUIZ_AI_POOL_LIMIT).forEach((e) => lines.push(`- ${e.expression} — ${e.meaning}`));
@@ -1555,36 +1667,23 @@
       .slice(0, QUIZ_AI_RECENT_LIMIT);
     if (corrected.length) corrected.forEach((c) => lines.push(`- ${c}`));
     else lines.push("- (없음)");
-    const bodyObj = {
-      systemInstruction: { parts: [{ text: QUIZ_SYSTEM_INSTRUCTION }] },
-      contents: [{ role: "user", parts: [{ text: lines.join("\n") }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: QUIZ_RESPONSE_SCHEMA,
+    // 고른 AI 한 자리로 보낸다(조각 ai-provider-choice). 키 없음 · 금고 잠김 · 실패면 내 기록으로 이어간다([Q1] · [Q9] · [P4])
+    const result = await requestChosenAi(
+      {
+        system: QUIZ_SYSTEM_INSTRUCTION,
+        userText: lines.join("\n"),
+        schema: QUIZ_RESPONSE_SCHEMA,
+        schemaName: "quiz_questions",
         temperature: 0.7,
       },
-    };
-
-    for (const modelName of GEMINI_FALLBACK_MODELS) {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
-      try {
-        // URL 쿼리 대신 x-goog-api-key 헤더로만 키를 보낸다([Q9])
-        const res = await rawFetch(endpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json; charset=utf-8",
-            "x-goog-api-key": savedKey,
-          },
-          body: JSON.stringify(bodyObj),
-        });
-        if (!res.ok) continue;
-        const questions = parseAiQuestions(await res.json());
-        if (questions.length) return { questions, status: "ok" };
-      } catch (_) {
-        // 오프라인 · 응답 오류 — 다음 모델, 다 실패하면 내 기록으로 이어간다
-      }
-    }
-    return { questions: [], status: "failed" };
+      (text) => {
+        const questions = parseAiQuestions(text);
+        return questions.length ? questions : null;
+      },
+      rawFetch
+    );
+    if (result.status === "ok") return { questions: result.value, status: "ok" };
+    return { questions: [], status: result.status };
   }
 
   // 학습 기록 탭 「퀴즈 점수」 — 최근 14일(오늘이 맨 앞)과 최근 7일 평균(푼 날 첫 점수 평균, 0.5 올림)([Q6])
@@ -1726,7 +1825,7 @@
           error: "문장은 최대 1,000자까지 입력할 수 있습니다.",
         });
       }
-      const feedback = await callDirectGeminiOrCoach(text, inputMode, rawFetch);
+      const feedback = await callChosenAiOrCoach(text, inputMode, rawFetch);
       const record = {
         id: makeId("fb"),
         createdAt: new Date().toISOString(),
