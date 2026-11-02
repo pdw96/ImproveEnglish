@@ -144,3 +144,23 @@
 | PR 1 | PC 서버 모드 — `src/ai_provider.py`, 첨삭 · 퀴즈 AI 를 고른 회사로, `.env.example`, 로컬 서버 `Origin` 검사, 시험 | P1 · P2 · P3 · P4 · P7 · P8 · P9 (PC) |
 | PR 2 | 폰 앱 금고와 고르기 — 세 키 금고(통째로 잠금 · 옛 Gemini 키 그대로), `ie_ai_provider`, 설정 탭 화면, 시험 | P1(폰) · P5 · P6 · P7(백업 · 화면) |
 | PR 3 | 폰 앱 호출 — 엔진의 첨삭 · 퀴즈 AI 를 고른 회사로, 안내 글, 시험 | P2 · P3 · P4 · P7(폰 호출) · P9 (폰) |
+
+## 2026-11-02 — PR 1 을 열기 전에 정한 것 (④ 열어 둔 것)
+
+④ 의 열어 둔 것 가운데 PR 1 몫을 정한다. 위의 항목은 고치지 않는다. 업무에 영향이 없는 기술 결정이라 추천안으로 정했다(`Profile.md`).
+
+- **OpenAI** — 요청 길은 Chat Completions(`POST https://api.openai.com/v1/chat/completions`, `response_format` 의 `json_schema` · `strict: true`).
+  대안 Responses API 는 같은 일을 하지만, 지시문 · 사용자 글 두 줄로 끝나는 지금 요청에는 Chat Completions 가 꼴이 단순하다.
+  모델 후보는 `gpt-5.4-mini` → `gpt-5-mini`(앞이 HTTP 404 면 뒤). 착공 때 OpenAI 공식 모델 목록 페이지는 이 작업 환경에서 열리지 않아
+  (네트워크 허용 목록 밖) 검색 결과로 정했다 — 저자 기기 확인(⑤)에서 실제로 도는 모델을 닫는 기록에 적는다.
+- **Anthropic** — `POST https://api.anthropic.com/v1/messages`, `anthropic-version: 2026-10-21`, 모델 `claude-haiku-5-5`,
+  `output_config.effort: "low"`(첨삭 · 문제 만들기는 깊은 생각이 필요 없고 빨리 와야 한다), `max_tokens: 8000`(생각 토큰이 함께 세어져도
+  응답이 잘리지 않게), 응답 꼴은 `output_config.format` 의 `json_schema`. 생각(thinking)은 이 모델의 기본(켜짐)을 그대로 둔다.
+- **JSON 스키마 옮기기** — 두 회사 모두 같은 함수(`to_json_schema`)로 옮긴다. 타입 이름 소문자, 모든 객체에 `additionalProperties: false`,
+  배열 개수 제한(`minItems` · `maxItems`)은 뺀다(Anthropic 은 받지 않는다). 개수는 받은 뒤 지금의 응답 검사가 문다(P3).
+- **크레딧 소진 · 한도 초과로 볼 HTTP 상태(P4 의 PC 첨삭)** — Gemini 402 · 429(지금과 같음), OpenAI 429(크레딧 소진도 429 로 온다),
+  Anthropic 402(`billing_error`) · 429(`rate_limit_error`). Anthropic 529(일시 과부하)는 넣지 않는다 — 크레딧 · 한도가 아니어서 지금 Gemini 의
+  503 처럼 오류 안내로 보인다.
+- **① 과 달라진 것** — `src/gemini.py` 는 넓히지 않아도 됐다. `ai_provider` 가 지금의 전송 함수(`_default_http_transport`, 키 가리기 포함)를
+  그대로 빌려 쓴다. `gemini.py` 에서 바뀐 것은 내장 코치 설명의 「Google AI 크레딧 연결 전」을 「AI 크레딧 소진 · 한도 초과 때」로 고친
+  한 줄뿐이다. 앵커볼트 상수는 그대로다(P9 시험).
