@@ -2,7 +2,8 @@
 
 - PC 서버 모드(PR 1): [P1] 고르기 · [P2] 고른 회사 하나만 · [P3] 같은 모양 · [P4] 실패하면 지금처럼 · [P7] 키 안전 ·
   [P8] 로컬 서버는 자기 화면만 · [P9] 앵커볼트 그대로.
-- 폰 앱 금고와 고르기(PR 2): [P1] 폰 저장 · [P5] 금고 하나 · [P6] 옛 Gemini 키 그대로 · [P7] 백업 · 화면에 가린 키 —
+- 폰 앱 금고와 고르기(PR 2): [P1] 폰 저장 · [P5] 금고 하나 · [P6] 옛 Gemini 키 그대로 · [P7] 백업 · 화면에 가린 키.
+- 폰 앱 호출(PR 3): [P2] · [P3] · [P4] · [P7] 폰 호출 · [P9] 폰 — PR 2 · PR 3 은
   `tests/provider_harness.mjs` 가 Node 로 엔진을 실제로 돌린 결과를 판정한다. Node 가 없으면 건너뛰고 이유를 남긴다.
 
 모든 시험은 가짜 전송 함수 · 가짜 저장소로 돈다 — 실제 회사로 요청을 보내지 않고, 키도 가짜다.
@@ -589,6 +590,21 @@ def session_names(*providers: str) -> set[str]:
     return {f"ie_{p}_api_key_session" for p in providers}
 
 
+_HARNESS_OUT: dict = {}
+
+
+def run_provider_harness() -> dict:
+    """provider_harness.mjs 를 한 번만 돌려 PR 2 · PR 3 시험이 함께 쓴다."""
+    if not _HARNESS_OUT:
+        proc = subprocess.run(
+            [NODE, str(PROVIDER_HARNESS)], cwd=REPO_ROOT, capture_output=True, text=True, timeout=300, check=False
+        )
+        if proc.returncode != 0:
+            raise AssertionError(f"provider_harness.mjs 실행 실패: {proc.stderr}")
+        _HARNESS_OUT.update(json.loads(proc.stdout))
+    return _HARNESS_OUT
+
+
 @unittest.skipIf(NODE is None, "Node 가 없어 폰 앱 엔진을 실제로 돌리는 시험을 건너뜁니다 (Node 18 이상 필요)")
 class TestPhoneVaultAndChoice(unittest.TestCase):
     """PR 2 — 폰 앱 엔진의 세 키 금고와 지금 쓸 AI."""
@@ -597,12 +613,7 @@ class TestPhoneVaultAndChoice(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        proc = subprocess.run(
-            [NODE, str(PROVIDER_HARNESS)], cwd=REPO_ROOT, capture_output=True, text=True, timeout=180, check=False
-        )
-        if proc.returncode != 0:
-            raise AssertionError(f"provider_harness.mjs 실행 실패: {proc.stderr}")
-        cls.out = json.loads(proc.stdout)
+        cls.out = run_provider_harness()
 
     def keys(self) -> dict[str, str]:
         return self.out["KEYS"]
@@ -769,6 +780,181 @@ class TestPhoneVaultAndChoice(unittest.TestCase):
             self.assertNotIn(key, masked[provider])
             self.assertTrue(masked[provider].startswith(key[:4]))
             self.assertTrue(masked[provider].endswith(key[-4:]))
+
+
+# 이 조각 전 커밋(1cac33f)의 엔진이 같은 입력(하네스의 첨삭 문장 · 같은 가짜 첨삭 응답 · 단어장 11개)으로
+# Gemini 에 보내던 본문의 지문 — [P9] 폰
+PHONE_GEMINI_BODY_SHA256 = {
+    "feedback": "9968b3dbc64ccc802dc069d24e876c5dab3e659d5b7da3155d9ccc1265751558",
+    "quiz": "8dc023d1fef62a92d1257a4c4a7f1c2fdc75b4bb54a4fdfaa5cf85d15347c029",
+}
+COACH_MARK = "[온디바이스 스마트 코치]"
+
+
+@unittest.skipIf(NODE is None, "Node 가 없어 폰 앱 엔진을 실제로 돌리는 시험을 건너뜁니다 (Node 18 이상 필요)")
+class TestPhoneAiCalls(unittest.TestCase):
+    """PR 3 — 폰 앱 엔진의 첨삭 · 퀴즈 AI 를 고른 회사로([P2] · [P3] · [P4] · [P7] · [P9] 폰)."""
+
+    out: dict = {}
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.out = run_provider_harness()
+
+    def keys(self) -> dict[str, str]:
+        return self.out["KEYS"]
+
+    def success(self, provider: str) -> dict:
+        return self.out["pr3Success"][provider]
+
+    @staticmethod
+    def bodies(calls: list[dict]) -> list[dict]:
+        return [json.loads(c["body"]) for c in calls]
+
+    # ── P2 ──
+    def test_p2_phone_feedback_and_quiz_go_only_to_chosen_company(self) -> None:
+        """[P2] 세 회사 키가 다 있어도 첨삭 한 번 · 퀴즈 한 번은 고른 회사 하나로만 간다."""
+        for provider in ai_provider.PROVIDERS:
+            with self.subTest(provider=provider):
+                calls = self.success(provider)["calls"]
+                self.assertEqual(len(calls), 2)
+                for call in calls:
+                    self.assertTrue(call["url"].startswith(HOSTS[provider]), call["url"])
+                    self.assertEqual(call["method"], "POST")
+
+    def test_p2_phone_model_candidates_stay_within_company(self) -> None:
+        """[P2] 모델 후보는 그 회사 안에서만 넘어간다 — OpenAI 첫 모델이 404 면 둘째 모델로, 다른 회사는 부르지 않는다."""
+        scene = self.out["pr3OpenAiFallback"]
+        self.assertEqual([b["model"] for b in self.bodies(scene["calls"])], list(ai_provider.MODEL_CANDIDATES["openai"]))
+        self.assertTrue(all(c["url"] == ai_provider.OPENAI_ENDPOINT for c in scene["calls"]))
+        self.assertEqual(scene["feedback"]["body"]["feedback"]["corrected"], "I'd like to get off work early today.")
+
+    def test_p2_phone_models_match_pc(self) -> None:
+        """폰과 PC 가 같은 모델 후보 · 같은 Anthropic 머리글 판을 쓴다(설계 2026-11-02 PR 1 항목)."""
+        for provider in ("openai", "anthropic"):
+            body = self.bodies(self.success(provider)["calls"])[0]
+            self.assertEqual(body["model"], ai_provider.MODEL_CANDIDATES[provider][0])
+        headers = self.success("anthropic")["calls"][0]["headers"]
+        self.assertEqual(headers["anthropic-version"], ai_provider.ANTHROPIC_VERSION)
+
+    # ── P3 ──
+    def test_p3_phone_same_result_and_record_shape(self) -> None:
+        """[P3] 어느 회사가 답해도 첨삭 결과 · 첨삭 노트 기록 모양이 같고, 회사 이름이 기록에 남지 않는다. 퀴즈 AI 새 문제도 같다."""
+        feedbacks = []
+        for provider in ai_provider.PROVIDERS:
+            with self.subTest(provider=provider):
+                scene = self.success(provider)
+                record = scene["feedback"]["body"]
+                self.assertEqual(scene["feedback"]["status"], 200)
+                self.assertEqual(set(record), {"id", "createdAt", "text", "inputMode", "feedback"})
+                stored = json.loads(scene["history"])
+                self.assertEqual(stored[0], record)
+                self.assertNotIn(provider, json.dumps(stored, ensure_ascii=False).lower())
+                feedbacks.append(record["feedback"])
+                self.assertEqual(scene["quiz"]["aiCount"], 3)
+                self.assertIsNone(scene["quiz"]["aiNotice"])
+                self.assertEqual(sorted(scene["quiz"]["aiExpressions"]), ["figure out", "give up", "put off"])
+                self.assertNotIn(provider, scene["quizStored"].lower())
+        self.assertEqual(feedbacks[0], feedbacks[1])
+        self.assertEqual(feedbacks[1], feedbacks[2])
+        self.assertNotIn(COACH_MARK, feedbacks[0]["explanation"])
+
+    # ── P4 ──
+    def test_p4_phone_failures_fall_back_like_before(self) -> None:
+        """[P4] 회사마다 호출 실패 · 막힘 · 거절 · 잘림 · 응답 꼴 밖이면 첨삭은 내장 코치(설명 끝에 「닿지 못해」 한 줄),
+        퀴즈는 내 기록 + 지금의 안내. 그 회사의 모델 후보만 부르고 다른 회사는 부르지 않는다."""
+        failures = self.out["pr3Failures"]
+        self.assertEqual(len(failures), 3 * 7 + 4)
+        for name, scene in failures.items():
+            provider = name.split(":")[0]
+            with self.subTest(case=name):
+                self.assertEqual(scene["feedback"]["status"], 200)
+                explanation = scene["feedback"]["body"]["feedback"]["explanation"]
+                self.assertTrue(explanation.startswith(COACH_MARK))
+                label = ai_provider.PROVIDER_LABELS[provider]
+                self.assertTrue(explanation.endswith(f"(고른 AI({label})에 닿지 못해 내장 스마트 코치가 답했습니다.)"), explanation)
+                self.assertEqual(scene["quiz"]["status"], 200)
+                self.assertEqual(scene["quiz"]["aiCount"], 0)
+                self.assertEqual(scene["quiz"]["aiNotice"], quiz_ai.AI_NOTICE_FAILED)
+                self.assertEqual(set(scene["quiz"]["sources"]), {"mine"})
+                self.assertEqual(len(scene["calls"]), 2 * len(ai_provider.MODEL_CANDIDATES[provider]))
+                self.assertTrue(all(url.startswith(HOSTS[provider]) for url in scene["calls"]), scene["calls"])
+
+    def test_p4_phone_no_key_calls_nobody(self) -> None:
+        """[P4] 고른 회사의 키가 없으면 다른 두 회사 키가 있어도 아무 데도 부르지 않는다 — 내장 코치 · 키 없음 안내."""
+        for provider in ai_provider.PROVIDERS:
+            with self.subTest(provider=provider):
+                scene = self.out["pr3NoKey"][provider]
+                self.assertEqual(scene["calls"], [])
+                self.assertTrue(scene["feedback"]["body"]["feedback"]["explanation"].startswith(COACH_MARK))
+                self.assertNotIn("닿지 못해", scene["feedback"]["body"]["feedback"]["explanation"])  # 키가 없을 때는 붙이지 않는다
+                self.assertEqual(scene["quiz"]["aiNotice"], quiz_ai.AI_NOTICE_NO_KEY)
+
+    def test_p4_phone_locked_vault_then_unlocked(self) -> None:
+        """[P4] 금고가 잠긴 창은 부르지 않고 내장 코치, 비밀번호로 풀면 고른 회사(OpenAI)로 간다."""
+        scene = self.out["pr3Locked"]
+        self.assertEqual(scene["lockedCalls"], 0)
+        self.assertTrue(scene["lockedFb"]["body"]["feedback"]["explanation"].startswith(COACH_MARK))
+        self.assertNotIn("닿지 못해", scene["lockedFb"]["body"]["feedback"]["explanation"])
+        self.assertEqual(scene["unlockedFb"]["body"]["feedback"]["corrected"], "I'd like to get off work early today.")
+        self.assertEqual([c["url"] for c in scene["calls"]], [ai_provider.OPENAI_ENDPOINT])
+
+    # ── P7 ──
+    def test_p7_phone_key_only_in_its_header(self) -> None:
+        """[P7] 폰 — 키는 회사마다 정한 머리글로만, 고른 회사 키만 간다. 주소 · 본문 · 첨삭 기록 · 퀴즈 기록 · 백업에 키가 없다."""
+        all_keys = self.keys()
+        for provider in ai_provider.PROVIDERS:
+            scene = self.success(provider)
+            with self.subTest(provider=provider):
+                for call in scene["calls"]:
+                    headers = call["headers"]
+                    expected = f"Bearer {all_keys[provider]}" if provider == "openai" else all_keys[provider]
+                    self.assertEqual(headers[KEY_HEADERS[provider]], expected)
+                    others = {k: v for k, v in headers.items() if k != KEY_HEADERS[provider]}
+                    for key in all_keys.values():
+                        self.assertNotIn(key, call["url"])
+                        self.assertNotIn(key, call["body"])
+                        self.assertNotIn(key, json.dumps(others))
+                    if provider == "anthropic":
+                        self.assertEqual(headers["anthropic-dangerous-direct-browser-access"], "true")
+                for stored in (scene["history"], scene["quizStored"], scene["backupText"]):
+                    for key in all_keys.values():
+                        self.assertNotIn(key, stored)
+
+    # ── P9 ──
+    def test_p9_phone_gemini_body_same_as_before_slice(self) -> None:
+        """[P9] 폰 — Gemini 로 보내는 첨삭 · 퀴즈 본문이 이 조각 전 엔진(1cac33f)의 본문과 글자까지 같다."""
+        calls = self.success("gemini")["calls"]
+        for name, call in zip(("feedback", "quiz"), calls):
+            digest = hashlib.sha256(call["body"].encode("utf-8")).hexdigest()
+            self.assertEqual(digest, PHONE_GEMINI_BODY_SHA256[name], name)
+
+    def test_p9_phone_other_companies_carry_same_instruction_and_schema(self) -> None:
+        """[P9] 폰 — OpenAI · Anthropic 본문에 Gemini 와 같은 지시문 · 사용자 글이 실리고, 스키마는 PC 와 같은 꼴로 옮긴 것이다.
+        온도는 보내지 않는다."""
+        gemini_bodies = self.bodies(self.success("gemini")["calls"])
+        for provider in ("openai", "anthropic"):
+            for index, gemini_body in enumerate(gemini_bodies):
+                body = self.bodies(self.success(provider)["calls"])[index]
+                system = gemini_body["systemInstruction"]["parts"][0]["text"]
+                user_text = gemini_body["contents"][0]["parts"][0]["text"]
+                schema = ai_provider.to_json_schema(gemini_body["generationConfig"]["responseSchema"])
+                with self.subTest(provider=provider, call=index):
+                    self.assertNotIn("temperature", json.dumps(body))
+                    if provider == "openai":
+                        self.assertEqual(body["messages"], [
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": user_text},
+                        ])
+                        self.assertEqual(body["response_format"]["type"], "json_schema")
+                        self.assertTrue(body["response_format"]["json_schema"]["strict"])
+                        self.assertEqual(body["response_format"]["json_schema"]["schema"], schema)
+                    else:
+                        self.assertEqual(body["system"], system)
+                        self.assertEqual(body["messages"], [{"role": "user", "content": user_text}])
+                        self.assertEqual(body["max_tokens"], ai_provider.ANTHROPIC_MAX_TOKENS)
+                        self.assertEqual(body["output_config"]["effort"], ai_provider.ANTHROPIC_EFFORT)
+                        self.assertEqual(body["output_config"]["format"], {"type": "json_schema", "schema": schema})
 
 
 class TestPhoneSettingsScreen(unittest.TestCase):
