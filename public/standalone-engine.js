@@ -21,22 +21,69 @@
     VOCAB: "ie_vocab_items_v1",
     ROUTINE: "ie_routine_state_v1",
     QUIZ: "ie_quiz_v1",
+    AI_PROVIDER: "ie_ai_provider", // 조각 ai-provider-choice — 지금 쓸 AI(gemini · openai · anthropic)
   };
 
-  const SESSION_KEY = "ie_gemini_api_key_session";
   // Gemini 모델 후보 — 서버 src/gemini.py FALLBACK_MODELS 와 같은 순서. gemini-2.5-flash 는 새 계정에서 404 라 맨 뒤에 둔다
   // (조각 review-quiz 실제 기기 진단, 2026-10-31). 첨삭 · 퀴즈가 함께 쓴다
   const GEMINI_FALLBACK_MODELS = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash"];
   const MIN_PIN_LENGTH = 4; // 설정 화면 안내 문구(「4자리 이상」)와 같은 값
 
-  // 메모리 상에 보관되는 복호화된 키 (세션 스토리지와 연동되어 새로고침 후에도 탭이 열려 있는 동안 유지)
-  let inMemoryDecryptedKey = (function () {
+  // 조각 ai-provider-choice: 회사마다 키 자리 — 평문 · 소금 · 초기값 · 암호문(기기) + 푼 키(창). Gemini 는 조각 api-key-vault 의
+  // 저장 이름을 그대로 쓴다 — 옮기지 않는다([P6]). 새 두 회사는 같은 꼴의 새 이름이다
+  const PROVIDERS = ["gemini", "openai", "anthropic"];
+  const DEFAULT_PROVIDER = "gemini";
+  const PROVIDER_LABELS = { gemini: "Gemini", openai: "ChatGPT", anthropic: "Claude" };
+  function vaultNames(provider) {
+    const base = `ie_${provider}_api_key`;
+    return {
+      plain: base,
+      salt: `${base}_salt`,
+      iv: `${base}_iv`,
+      cipher: `${base}_encrypted`,
+      session: `${base}_session`,
+    };
+  }
+
+  function normalizeProvider(value) {
+    const v = typeof value === "string" ? value.trim().toLowerCase() : "";
+    return PROVIDERS.includes(v) ? v : null;
+  }
+
+  // 지금 쓸 AI — 없거나 목록 밖이면 gemini 다([P1] · ③)
+  function getChosenProvider() {
+    let raw = null;
     try {
-      return (sessionStorage.getItem(SESSION_KEY) || "").trim() || null;
-    } catch (_) {
-      return null;
-    }
-  })();
+      raw = localStorage.getItem(STORAGE_KEYS.AI_PROVIDER);
+    } catch (_) {}
+    return normalizeProvider(raw) || DEFAULT_PROVIDER;
+  }
+
+  // 메모리 상에 보관되는 푼 키 (세션 스토리지와 연동되어 새로고침 후에도 탭이 열려 있는 동안 유지)
+  const decryptedKeys = {};
+  PROVIDERS.forEach((p) => {
+    try {
+      const v = (sessionStorage.getItem(vaultNames(p).session) || "").trim();
+      if (v) decryptedKeys[p] = v;
+    } catch (_) {}
+  });
+
+  function plainKeyOf(provider) {
+    return (localStorage.getItem(vaultNames(provider).plain) || "").trim();
+  }
+  function hasCipher(provider) {
+    return Boolean(localStorage.getItem(vaultNames(provider).cipher));
+  }
+  // 지금 이 창에서 쓸 수 있는 키(평문 보관 또는 푼 키). 없으면 ""
+  function usableKey(provider) {
+    return decryptedKeys[provider] || plainKeyOf(provider);
+  }
+  // 회사 키 상태 — 쓸 수 있음 · 금고 잠김 · 없음
+  function keyState(provider) {
+    if (usableKey(provider)) return "ready";
+    if (hasCipher(provider)) return "locked";
+    return "none";
+  }
 
   async function deriveAesKey(pinOrPassword, saltBytes) {
     const enc = new TextEncoder();
@@ -61,73 +108,203 @@
     );
   }
 
-  async function encryptApiKeyWithPin(rawApiKey, pin) {
-    if (!pin) {
-      // PIN이 없으면 평문 저장 (이전 방식 호환)
-      localStorage.setItem(STORAGE_KEYS.API_KEY, rawApiKey);
-      localStorage.removeItem(STORAGE_KEYS.API_KEY_SALT);
-      localStorage.removeItem(STORAGE_KEYS.API_KEY_IV);
-      localStorage.removeItem(STORAGE_KEYS.API_KEY_ENCRYPTED);
-      // 앞서 금고를 풀어 창에 남은 옛 키를 지운다 — 남기면 새로고침 뒤 새 키 대신 옛 키가 쓰인다 (NC-1)
-      try {
-        sessionStorage.removeItem(SESSION_KEY);
-      } catch (_) {}
-      inMemoryDecryptedKey = rawApiKey;
-      return;
-    }
+  // 한 회사 키를 비밀번호로 잠근 저장 값(소금 · 초기값 · 암호문) — 저장은 부르는 쪽이 한 묶음으로 한다
+  async function encryptKeyValues(rawApiKey, pin) {
     const salt = crypto.getRandomValues(new Uint8Array(16));
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const key = await deriveAesKey(pin, salt);
-    const enc = new TextEncoder();
     const cipherBuffer = await crypto.subtle.encrypt(
       { name: "AES-GCM", iv },
       key,
-      enc.encode(rawApiKey)
+      new TextEncoder().encode(rawApiKey)
     );
-    const cipherArray = Array.from(new Uint8Array(cipherBuffer));
-    localStorage.setItem(STORAGE_KEYS.API_KEY_SALT, JSON.stringify(Array.from(salt)));
-    localStorage.setItem(STORAGE_KEYS.API_KEY_IV, JSON.stringify(Array.from(iv)));
-    localStorage.setItem(STORAGE_KEYS.API_KEY_ENCRYPTED, JSON.stringify(cipherArray));
-    localStorage.removeItem(STORAGE_KEYS.API_KEY); // 평문 키는 기기에서 즉시 영구 삭제
-    inMemoryDecryptedKey = rawApiKey;
-    try {
-      sessionStorage.setItem(SESSION_KEY, rawApiKey);
-    } catch (_) {}
+    return {
+      salt: JSON.stringify(Array.from(salt)),
+      iv: JSON.stringify(Array.from(iv)),
+      cipher: JSON.stringify(Array.from(new Uint8Array(cipherBuffer))),
+    };
   }
 
-  async function tryDecryptApiKeyWithPin(pin) {
-    if (inMemoryDecryptedKey) return inMemoryDecryptedKey;
-    const rawPlain = (localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim();
-    if (rawPlain) {
-      inMemoryDecryptedKey = rawPlain;
-      return rawPlain;
-    }
-    const encStr = localStorage.getItem(STORAGE_KEYS.API_KEY_ENCRYPTED);
-    const saltStr = localStorage.getItem(STORAGE_KEYS.API_KEY_SALT);
-    const ivStr = localStorage.getItem(STORAGE_KEYS.API_KEY_IV);
-    if (!encStr || !saltStr || !ivStr || !pin) {
-      return null;
-    }
+  // 한 회사의 잠긴 키를 푼다 — 틀린 비밀번호 · 망가진 저장 값이면 null(저장 값은 건드리지 않는다)
+  async function decryptKey(provider, pin) {
+    const names = vaultNames(provider);
+    const encStr = localStorage.getItem(names.cipher);
+    const saltStr = localStorage.getItem(names.salt);
+    const ivStr = localStorage.getItem(names.iv);
+    if (!encStr || !saltStr || !ivStr || !pin) return null;
     try {
       const salt = new Uint8Array(JSON.parse(saltStr));
       const iv = new Uint8Array(JSON.parse(ivStr));
       const cipher = new Uint8Array(JSON.parse(encStr));
       const key = await deriveAesKey(pin, salt);
-      const decryptedBuffer = await crypto.subtle.decrypt(
-        { name: "AES-GCM", iv },
-        key,
-        cipher
-      );
-      const dec = new TextDecoder();
-      const result = dec.decode(decryptedBuffer);
-      inMemoryDecryptedKey = result;
-      try {
-        sessionStorage.setItem(SESSION_KEY, result);
-      } catch (_) {}
-      return result;
+      const decryptedBuffer = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, cipher);
+      return new TextDecoder().decode(decryptedBuffer);
     } catch (_) {
       return null;
     }
+  }
+
+  // 기기 · 창 저장소에 한 묶음으로 쓴다 — 하나라도 실패하면(저장 공간 등) 이미 쓴 것을 앞 값으로 되돌리고 예외를 올린다
+  function applyStorageWrites(localWrites, sessionWrites) {
+    const done = [];
+    try {
+      for (const [name, value] of localWrites) {
+        const before = localStorage.getItem(name);
+        if (value === null) localStorage.removeItem(name);
+        else localStorage.setItem(name, value);
+        done.push([localStorage, name, before]);
+      }
+      for (const [name, value] of sessionWrites) {
+        let before = null;
+        try {
+          before = sessionStorage.getItem(name);
+          if (value === null) sessionStorage.removeItem(name);
+          else sessionStorage.setItem(name, value);
+          done.push([sessionStorage, name, before]);
+        } catch (_) {
+          // 창 보관은 편의다 — 못 써도 기기 저장은 그대로 둔다
+        }
+      }
+    } catch (err) {
+      for (const [store, name, before] of done.reverse()) {
+        try {
+          if (before === null) store.removeItem(name);
+          else store.setItem(name, before);
+        } catch (_) {}
+      }
+      throw err;
+    }
+  }
+
+  // 금고 저장 값 전체(세 회사의 평문 · 소금 · 초기값 · 암호문)를 한 글로 — 저장 · 풀기가 시작할 때 본 금고가 쓰기 직전에도
+  // 그대로인지 맞대어 본다. 다른 창(탭)이 그사이 금고를 바꿨으면 쓰지 않는다(PR 2 리뷰 1회차 — 비밀번호가 둘인 금고를 막는다)
+  function vaultSnapshot() {
+    return JSON.stringify(
+      PROVIDERS.map((p) => {
+        const n = vaultNames(p);
+        return [n.plain, n.salt, n.iv, n.cipher].map((name) => localStorage.getItem(name));
+      })
+    );
+  }
+
+  // 한 창 안에서 금고를 바꾸는 일(저장 · 풀기)은 하나씩 차례로 — 겹쳐 눌러도 앞의 일이 끝난 금고를 보고 판단한다
+  let vaultQueue = Promise.resolve();
+  function inVaultQueue(task) {
+    const run = vaultQueue.then(task, task);
+    vaultQueue = run.catch(() => {});
+    return run;
+  }
+
+  // [P5] 금고 하나 — 받은 회사 키들을 한 비밀번호로 한 번에 저장한다. 금고는 통째로 잠기거나 열려 있다.
+  //  - 저장 뒤에도 남는 잠긴 키(받지 않은 회사의 암호문)가 있으면 그 비밀번호가 있어야 한다 — 없거나 틀리면 거절, 저장 값 그대로
+  //  - 비밀번호를 넣어 저장하면 평문으로 두었던 다른 회사 키도 같은 비밀번호로 함께 잠근다
+  //  - 비밀번호 없이 저장하면(남는 잠긴 키가 없을 때만) 받은 키를 평문으로 두고, 그 회사의 옛 암호문 · 창에 남은 옛 키를 지운다(NC-1)
+  async function saveKeys(entries, pin) {
+    const cleanedPin = (pin || "").trim();
+    if (cleanedPin && cleanedPin.length < MIN_PIN_LENGTH) return false;
+    const filled = {};
+    Object.keys(entries || {}).forEach((p) => {
+      const provider = normalizeProvider(p);
+      const value = typeof entries[p] === "string" ? entries[p].trim() : "";
+      if (provider && value) filled[provider] = value;
+    });
+    const targets = Object.keys(filled);
+    if (!targets.length) return false;
+
+    const seen = vaultSnapshot();
+    const remainingLocked = PROVIDERS.filter((p) => !filled[p] && hasCipher(p));
+    const unlockedNow = {};
+    if (remainingLocked.length) {
+      if (!cleanedPin) return false;
+      for (const p of remainingLocked) {
+        const k = await decryptKey(p, cleanedPin);
+        if (!k) return false;
+        unlockedNow[p] = k;
+      }
+    }
+
+    const localWrites = [];
+    const sessionWrites = [];
+    const memory = {};
+    if (!cleanedPin) {
+      for (const p of targets) {
+        const n = vaultNames(p);
+        localWrites.push([n.plain, filled[p]], [n.salt, null], [n.iv, null], [n.cipher, null]);
+        sessionWrites.push([n.session, null]);
+        memory[p] = filled[p];
+      }
+    } else {
+      // 받은 키 + 평문으로 두었던 다른 회사 키를 모두 이 비밀번호로 잠근다
+      const toLock = { ...filled };
+      PROVIDERS.forEach((p) => {
+        if (!toLock[p] && plainKeyOf(p)) toLock[p] = plainKeyOf(p);
+      });
+      for (const p of Object.keys(toLock)) {
+        const n = vaultNames(p);
+        const enc = await encryptKeyValues(toLock[p], cleanedPin);
+        localWrites.push([n.salt, enc.salt], [n.iv, enc.iv], [n.cipher, enc.cipher], [n.plain, null]);
+        sessionWrites.push([n.session, toLock[p]]);
+        memory[p] = toLock[p];
+      }
+      for (const p of Object.keys(unlockedNow)) {
+        sessionWrites.push([vaultNames(p).session, unlockedNow[p]]);
+        memory[p] = unlockedNow[p];
+      }
+    }
+    // 암호화를 기다리는 사이 다른 창이 금고를 바꿨으면 쓰지 않는다 — 판단한 금고와 쓸 금고가 같을 때만 쓴다
+    if (vaultSnapshot() !== seen) return false;
+    applyStorageWrites(localWrites, sessionWrites);
+    Object.keys(memory).forEach((p) => {
+      decryptedKeys[p] = memory[p];
+    });
+    // 평문으로 바꾼 회사는 창 보관 키를 지웠다 — 메모리에는 새 평문 키만 남는다
+    return true;
+  }
+
+  // 금고 풀기 — 잠긴 키를 모두 같은 비밀번호로 푼다. 하나라도 못 풀면 아무것도 풀지 않는다(저장 값은 그대로)
+  async function unlockAll(pin) {
+    const cleanedPin = (pin || "").trim();
+    const locked = PROVIDERS.filter((p) => hasCipher(p));
+    if (!locked.length || !cleanedPin) return false;
+    const seen = vaultSnapshot();
+    const opened = {};
+    for (const p of locked) {
+      const k = await decryptKey(p, cleanedPin);
+      if (!k) return false;
+      opened[p] = k;
+    }
+    // 푸는 사이 다른 창이 금고를 바꿨으면 옛 키를 이 창에 남기지 않는다
+    if (vaultSnapshot() !== seen) return false;
+    Object.keys(opened).forEach((p) => {
+      decryptedKeys[p] = opened[p];
+      try {
+        sessionStorage.setItem(vaultNames(p).session, opened[p]);
+      } catch (_) {}
+    });
+    return true;
+  }
+
+  // 한 회사 키만 지운다 — 평문 · 소금 · 초기값 · 암호문 · 창에 푼 키
+  function clearKey(provider) {
+    const p = normalizeProvider(provider) || DEFAULT_PROVIDER;
+    const n = vaultNames(p);
+    [n.plain, n.salt, n.iv, n.cipher].forEach((name) => localStorage.removeItem(name));
+    try {
+      sessionStorage.removeItem(n.session);
+    } catch (_) {}
+    delete decryptedKeys[p];
+  }
+
+  function maskedKey(provider) {
+    const k = usableKey(provider);
+    if (k) {
+      if (k.length <= 8) return "********";
+      return `${k.slice(0, 4)}••••••••${k.slice(-4)}`;
+    }
+    if (hasCipher(provider)) {
+      return "🔒 암호화되어 안전하게 잠금 보관 중 (AES-256)";
+    }
+    return "";
   }
 
   const VALID_MISSION_CATEGORIES = ["all", "work", "daily", "travel", "opinion"];
@@ -613,9 +790,7 @@
   }
 
   async function callDirectGeminiOrCoach(text, inputMode, rawFetch) {
-    const savedKey =
-      inMemoryDecryptedKey ||
-      (localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim();
+    const savedKey = usableKey("gemini");
     if (!savedKey) {
       return buildLocalCoachFeedback(text);
     }
@@ -1368,8 +1543,7 @@
 
   async function callQuizAi(pool, historyRecords, rawFetch) {
     if (pool.length < QUIZ_CHOICES) return { questions: [], status: "failed" };
-    const savedKey =
-      inMemoryDecryptedKey || (localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim();
+    const savedKey = usableKey("gemini");
     if (!savedKey) return { questions: [], status: "no_key" };
 
     const lines = ["[배운 표현]"];
@@ -2073,63 +2247,60 @@
       localStorage.setItem(STORAGE_KEYS.MODE, next);
       return next;
     },
-    hasApiKey() {
-      return Boolean(
-        inMemoryDecryptedKey ||
-          (localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim() ||
-          localStorage.getItem(STORAGE_KEYS.API_KEY_ENCRYPTED)
-      );
+    // ── 조각 ai-provider-choice: 지금 쓸 AI · 회사별 키 ──
+    // 회사 이름을 받지 않는 부름은 지금 쓸 AI 를 뜻한다(조각 api-key-vault 때의 부름과 같게 돈다 — 고른 적 없으면 gemini)
+    PROVIDERS: PROVIDERS.slice(),
+    PROVIDER_LABELS: { ...PROVIDER_LABELS },
+    getProvider() {
+      return getChosenProvider();
     },
-    isEncrypted() {
-      return Boolean(localStorage.getItem(STORAGE_KEYS.API_KEY_ENCRYPTED));
-    },
-    isUnlocked() {
-      return Boolean(
-        inMemoryDecryptedKey ||
-          (localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim()
-      );
-    },
-    getMaskedApiKey() {
-      const k =
-        inMemoryDecryptedKey ||
-        (localStorage.getItem(STORAGE_KEYS.API_KEY) || "").trim();
-      if (k) {
-        if (k.length <= 8) return "********";
-        return `${k.slice(0, 4)}••••••••${k.slice(-4)}`;
-      }
-      if (localStorage.getItem(STORAGE_KEYS.API_KEY_ENCRYPTED)) {
-        return "🔒 암호화되어 안전하게 잠금 보관 중 (AES-256)";
-      }
-      return "";
-    },
-    MIN_PIN_LENGTH,
-    async saveApiKeyWithPin(rawKey, pin) {
-      const cleaned = (rawKey || "").trim();
-      if (!cleaned) {
-        this.clearApiKey();
-        return false;
-      }
-      const cleanedPin = (pin || "").trim();
-      // 1 ~ 3자 비밀번호는 거절하고 저장 값을 건드리지 않는다 (빈 비밀번호는 평문 보관)
-      if (cleanedPin && cleanedPin.length < MIN_PIN_LENGTH) {
-        return false;
-      }
-      await encryptApiKeyWithPin(cleaned, cleanedPin);
+    setProvider(provider) {
+      const p = normalizeProvider(provider);
+      if (!p) return false;
+      localStorage.setItem(STORAGE_KEYS.AI_PROVIDER, p);
       return true;
     },
-    async unlockWithPin(pin) {
-      const key = await tryDecryptApiKeyWithPin((pin || "").trim());
-      return Boolean(key);
+    keyState(provider) {
+      return keyState(normalizeProvider(provider) || getChosenProvider());
     },
-    clearApiKey() {
-      localStorage.removeItem(STORAGE_KEYS.API_KEY);
-      localStorage.removeItem(STORAGE_KEYS.API_KEY_SALT);
-      localStorage.removeItem(STORAGE_KEYS.API_KEY_IV);
-      localStorage.removeItem(STORAGE_KEYS.API_KEY_ENCRYPTED);
-      try {
-        sessionStorage.removeItem(SESSION_KEY);
-      } catch (_) {}
-      inMemoryDecryptedKey = null;
+    hasApiKey(provider) {
+      const p = normalizeProvider(provider) || getChosenProvider();
+      return keyState(p) !== "none";
+    },
+    // 금고가 있나 — 회사를 주면 그 회사 키를 잠갔나, 안 주면 어느 회사든 잠근 키가 있나
+    isEncrypted(provider) {
+      const p = normalizeProvider(provider);
+      return p ? hasCipher(p) : PROVIDERS.some((q) => hasCipher(q));
+    },
+    // 금고가 잠겼나 — 잠근 키 가운데 아직 풀지 않은 것이 있으면 true
+    isVaultLocked() {
+      return PROVIDERS.some((p) => keyState(p) === "locked");
+    },
+    isUnlocked(provider) {
+      return keyState(normalizeProvider(provider) || getChosenProvider()) === "ready";
+    },
+    getMaskedApiKey(provider) {
+      return maskedKey(normalizeProvider(provider) || getChosenProvider());
+    },
+    MIN_PIN_LENGTH,
+    // 키 저장 — 글 하나를 받으면 Gemini 키(조각 api-key-vault 때와 같음, 빈 글은 Gemini 키 지우기),
+    // { gemini, openai, anthropic } 를 받으면 채운 칸만 한 비밀번호로 한 번에 저장한다([P5])
+    async saveApiKeyWithPin(keys, pin) {
+      if (typeof keys === "string" || keys === null || keys === undefined) {
+        const cleaned = (keys || "").trim();
+        if (!cleaned) {
+          clearKey("gemini");
+          return false;
+        }
+        return inVaultQueue(() => saveKeys({ gemini: cleaned }, pin));
+      }
+      return inVaultQueue(() => saveKeys(keys, pin));
+    },
+    async unlockWithPin(pin) {
+      return inVaultQueue(() => unlockAll(pin));
+    },
+    clearApiKey(provider) {
+      clearKey(provider || "gemini");
     },
     exportBackupPayload,
     importBackupPayload,

@@ -119,8 +119,16 @@
   const settingsPinInput = document.getElementById("settings-pin-input");
   const apikeyMaskedHint = document.getElementById("apikey-masked-hint");
   const apikeySaveBtn = document.getElementById("apikey-save-btn");
-  const apikeyClearBtn = document.getElementById("apikey-clear-btn");
   const apikeyStatusMsg = document.getElementById("apikey-status-msg");
+  // 조각 ai-provider-choice: 지금 쓸 AI 단추 셋 · 회사별 키 칸 · 칸마다 상태와 [지우기]
+  const KEY_PROVIDERS = ["gemini", "openai", "anthropic"];
+  const providerButtons = Array.from(document.querySelectorAll("[data-ai-provider]"));
+  const aiProviderHint = document.getElementById("ai-provider-hint");
+  const keyInputs = {
+    gemini: settingsApikeyInput,
+    openai: document.getElementById("settings-apikey-openai-input"),
+    anthropic: document.getElementById("settings-apikey-anthropic-input"),
+  };
   const backupStatsBadge = document.getElementById("backup-stats-badge");
   const backupExportBtn = document.getElementById("backup-export-btn");
   const backupImportInput = document.getElementById("backup-import-input");
@@ -1574,15 +1582,29 @@
         : "btn btn-secondary";
     }
 
-    // 키 상태는 셋 — 쓸 수 있음(평문 보관 또는 금고 해제) · 금고 잠김 · 키 없음
+    // 지금 쓸 AI — 단추 셋 가운데 하나만 눌림. PC 서버 모드에서는 PC 의 .env 를 따른다고 알린다
+    const chosen = engine.getProvider();
+    const chosenLabel = engine.PROVIDER_LABELS[chosen];
+    providerButtons.forEach((btn) => {
+      const on = btn.dataset.aiProvider === chosen;
+      btn.className = on ? "btn btn-primary" : "btn btn-secondary";
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    if (aiProviderHint) {
+      aiProviderHint.textContent = isStandalone
+        ? `첨삭 · 오늘의 퀴즈 AI 새 문제를 ${chosenLabel} 에 부탁합니다. ${chosenLabel} 키가 없거나 금고가 잠겨 있으면 내장 스마트 코치 · 내 기록 문제로 이어집니다.`
+        : "PC 서버 모드에서는 PC 의 .env 파일 AI_PROVIDER 와 그 키를 따릅니다. 여기서 고른 AI 와 키는 스마트폰 단독 모드에서 쓰입니다.";
+    }
+
+    // 키 상태는 셋 — 쓸 수 있음(평문 보관 또는 금고 해제) · 금고 잠김 · 키 없음 (지금 쓸 AI 의 키 기준)
     const keyState = engine.isUnlocked()
       ? "ready"
-      : engine.isEncrypted()
+      : engine.keyState() === "locked"
       ? "locked"
       : "none";
     if (apikeyStatusBadge) {
       apikeyStatusBadge.textContent = {
-        ready: "개인 Gemini API 키 연결됨",
+        ready: `${chosenLabel} 키 연결됨`,
         locked: "금고 잠김 — 비밀번호로 해제",
         none: "내장 스마트 코치 동작 중",
       }[keyState];
@@ -1595,12 +1617,26 @@
     }
     if (apikeyMaskedHint) {
       apikeyMaskedHint.textContent = {
-        ready: `현재 기기에 저장된 키: ${engine.getMaskedApiKey()}`,
+        ready: `지금 쓸 AI(${chosenLabel}) 키: ${engine.getMaskedApiKey()}`,
         locked:
           "금고가 잠겨 있습니다. 비밀번호 칸에 비밀번호만 넣고 저장 버튼을 누르면 풀립니다 (잠긴 동안 첨삭은 내장 스마트 코치가 합니다).",
-        none: "현재 기기에 저장된 API 키가 없습니다 (내장 스마트 코치 사용 중).",
+        none: `${chosenLabel} 키가 이 기기에 없습니다 (내장 스마트 코치 사용 중).`,
       }[keyState];
     }
+    // 칸마다 상태 — 저장됨(가린 키) · 잠김 · 없음, 키가 없으면 [지우기] 를 숨긴다
+    KEY_PROVIDERS.forEach((provider) => {
+      const state = engine.keyState(provider);
+      const label = document.querySelector(`[data-key-state="${provider}"]`);
+      if (label) {
+        label.textContent = {
+          ready: `· 저장됨 ${engine.getMaskedApiKey(provider)}`,
+          locked: "· 잠김",
+          none: "· 없음",
+        }[state];
+      }
+      const clearBtn = document.querySelector(`[data-key-clear="${provider}"]`);
+      if (clearBtn) clearBtn.hidden = state === "none";
+    });
 
     const stats = engine.getLocalStats();
     if (backupStatsBadge) {
@@ -1659,17 +1695,38 @@
       });
     }
 
+    providerButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!engine) return;
+        const provider = btn.dataset.aiProvider;
+        if (!engine.setProvider(provider)) return;
+        renderStandaloneSettings();
+        const label = engine.PROVIDER_LABELS[provider];
+        const tail = engine.hasApiKey(provider)
+          ? ""
+          : ` ${label} 키를 아래에 넣어야 ${label} 가 답합니다 (그 전에는 내장 스마트 코치가 답합니다).`;
+        showApikeyStatus(`지금 쓸 AI 를 ${label} 로 바꿨습니다.${tail}`, "info");
+      });
+    });
+
     if (apikeySaveBtn && engine) {
       apikeySaveBtn.addEventListener("click", async () => {
-        const val = settingsApikeyInput ? settingsApikeyInput.value.trim() : "";
+        // 채운 키 칸만 모은다 — 빈 칸의 회사 키는 건드리지 않는다
+        const keys = {};
+        KEY_PROVIDERS.forEach((provider) => {
+          const input = keyInputs[provider];
+          const value = input ? input.value.trim() : "";
+          if (value) keys[provider] = value;
+        });
+        const val = Object.keys(keys).length ? keys : null;
         const pin = settingsPinInput ? settingsPinInput.value.trim() : "";
 
-        // 기존에 암호화된 키가 있고, API 키 입력 없이 PIN만 입력한 경우 -> 잠금 해제 시도
+        // 키 칸을 비우고 비밀번호만 넣은 경우 -> 잠긴 금고 풀기(잠근 키를 모두 함께 푼다)
         if (!val && engine.isEncrypted() && pin) {
           const unlocked = await engine.unlockWithPin(pin);
           if (unlocked) {
             renderStandaloneSettings();
-            showApikeyStatus("암호화 금고가 해제되었습니다! Gemini AI 첨삭이 활성화되었습니다.", "info");
+            showApikeyStatus("암호화 금고가 해제되었습니다! 넣어 둔 키로 AI 첨삭이 활성화되었습니다.", "info");
             if (settingsPinInput) settingsPinInput.value = "";
           } else {
             showApikeyStatus("비밀번호(PIN)가 일치하지 않습니다.", "error");
@@ -1678,12 +1735,21 @@
         }
 
         if (!val) {
-          showApikeyStatus("저장할 Gemini API 키를 입력해 주세요.", "error");
+          showApikeyStatus("저장할 API 키를 한 칸 이상 넣어 주세요 (Gemini · ChatGPT · Claude).", "error");
           return;
         }
         if (pin && pin.length < engine.MIN_PIN_LENGTH) {
           showApikeyStatus(
             `금고 비밀번호는 ${engine.MIN_PIN_LENGTH}자 이상으로 넣어 주세요. 비밀번호 없이 저장하려면 비밀번호 칸을 비워 두세요.`,
+            "error"
+          );
+          return;
+        }
+        // 금고에 이번에 바꾸지 않는 잠근 키가 남으면 금고 비밀번호가 있어야 한다(금고는 통째로 잠긴다)
+        const keepsLockedKey = KEY_PROVIDERS.some((provider) => !keys[provider] && engine.isEncrypted(provider));
+        if (!pin && keepsLockedKey) {
+          showApikeyStatus(
+            "금고에 잠근 키가 있어, 금고 비밀번호를 함께 넣어야 새 키를 저장할 수 있습니다. 저장된 키는 그대로입니다.",
             "error"
           );
           return;
@@ -1698,35 +1764,40 @@
         if (!saved) {
           renderStandaloneSettings();
           showApikeyStatus(
-            "키를 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요 (https 주소로 열었는지, 기기 저장 공간이 남아 있는지 확인해 주세요).",
+            keepsLockedKey
+              ? "금고 비밀번호가 맞지 않아 저장하지 않았습니다. 저장된 키는 그대로입니다."
+              : "키를 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요 (https 주소로 열었는지, 기기 저장 공간이 남아 있는지 확인해 주세요).",
             "error"
           );
           return;
         }
-        if (settingsApikeyInput) settingsApikeyInput.value = "";
+        KEY_PROVIDERS.forEach((provider) => {
+          if (keyInputs[provider]) keyInputs[provider].value = "";
+        });
         if (settingsPinInput) settingsPinInput.value = "";
         renderStandaloneSettings();
+        const names = Object.keys(keys)
+          .map((provider) => engine.PROVIDER_LABELS[provider])
+          .join(" · ");
         const encNotice = pin
-          ? " (입력하신 비밀번호로 AES-256 암호화되어 기기에 보관되었습니다)"
+          ? " (입력하신 비밀번호로 모든 키를 AES-256 암호화해 기기에 보관했습니다)"
           : " (비밀번호 미설정 일반 보관)";
-        showApikeyStatus(
-          `개인 Gemini API 키가 이 기기 내부에 안전하게 저장되었습니다${encNotice}.`,
-          "info"
-        );
+        showApikeyStatus(`${names} API 키가 이 기기 내부에 안전하게 저장되었습니다${encNotice}.`, "info");
       });
     }
 
-    if (apikeyClearBtn && engine) {
-      apikeyClearBtn.addEventListener("click", () => {
-        engine.clearApiKey();
-        if (settingsApikeyInput) settingsApikeyInput.value = "";
+    document.querySelectorAll("[data-key-clear]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!engine) return;
+        const provider = btn.dataset.keyClear;
+        engine.clearApiKey(provider);
+        if (keyInputs[provider]) keyInputs[provider].value = "";
         renderStandaloneSettings();
-        showApikeyStatus(
-          "기기에 저장된 API 키가 삭제되었습니다. 내장 스마트 코치 모드로 동작합니다.",
-          "info"
-        );
+        const label = engine.PROVIDER_LABELS[provider];
+        const tail = engine.getProvider() === provider ? " 지금 쓸 AI 의 키라 내장 스마트 코치로 동작합니다." : "";
+        showApikeyStatus(`기기에 저장된 ${label} API 키를 삭제했습니다.${tail}`, "info");
       });
-    }
+    });
 
     if (backupExportBtn && engine) {
       backupExportBtn.addEventListener("click", () => {

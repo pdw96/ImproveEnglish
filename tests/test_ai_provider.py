@@ -1,7 +1,11 @@
-"""조각 9(ai-provider-choice) 자동 시험 — PC 서버 모드(PR 1): [P1] 고르기 · [P2] 고른 회사 하나만 · [P3] 같은 모양 ·
-[P4] 실패하면 지금처럼 · [P7] 키 안전 · [P8] 로컬 서버는 자기 화면만 · [P9] 앵커볼트 그대로.
+"""조각 9(ai-provider-choice) 자동 시험.
 
-모든 시험은 가짜 전송 함수로 돈다 — 실제 회사로 요청을 보내지 않고, 키도 가짜다.
+- PC 서버 모드(PR 1): [P1] 고르기 · [P2] 고른 회사 하나만 · [P3] 같은 모양 · [P4] 실패하면 지금처럼 · [P7] 키 안전 ·
+  [P8] 로컬 서버는 자기 화면만 · [P9] 앵커볼트 그대로.
+- 폰 앱 금고와 고르기(PR 2): [P1] 폰 저장 · [P5] 금고 하나 · [P6] 옛 Gemini 키 그대로 · [P7] 백업 · 화면에 가린 키 —
+  `tests/provider_harness.mjs` 가 Node 로 엔진을 실제로 돌린 결과를 판정한다. Node 가 없으면 건너뛰고 이유를 남긴다.
+
+모든 시험은 가짜 전송 함수 · 가짜 저장소로 돈다 — 실제 회사로 요청을 보내지 않고, 키도 가짜다.
 """
 
 from __future__ import annotations
@@ -11,6 +15,8 @@ import http.client
 import json
 import os
 import pathlib
+import shutil
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -563,6 +569,239 @@ class TestP9Anchor(unittest.TestCase):
                         body["output_config"]["format"]["schema"],
                         ai_provider.to_json_schema(gemini_module.RESPONSE_SCHEMA),
                     )
+
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+PROVIDER_HARNESS = REPO_ROOT / "tests" / "provider_harness.mjs"
+NODE = shutil.which("node")
+VAULT_PARTS = ("", "_salt", "_iv", "_encrypted")
+
+
+def vault_names(provider: str) -> set[str]:
+    return {f"ie_{provider}_api_key{part}" for part in VAULT_PARTS}
+
+
+def locked_names(*providers: str) -> set[str]:
+    return {f"ie_{p}_api_key{part}" for p in providers for part in ("_salt", "_iv", "_encrypted")}
+
+
+def session_names(*providers: str) -> set[str]:
+    return {f"ie_{p}_api_key_session" for p in providers}
+
+
+@unittest.skipIf(NODE is None, "Node 가 없어 폰 앱 엔진을 실제로 돌리는 시험을 건너뜁니다 (Node 18 이상 필요)")
+class TestPhoneVaultAndChoice(unittest.TestCase):
+    """PR 2 — 폰 앱 엔진의 세 키 금고와 지금 쓸 AI."""
+
+    out: dict = {}
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        proc = subprocess.run(
+            [NODE, str(PROVIDER_HARNESS)], cwd=REPO_ROOT, capture_output=True, text=True, timeout=180, check=False
+        )
+        if proc.returncode != 0:
+            raise AssertionError(f"provider_harness.mjs 실행 실패: {proc.stderr}")
+        cls.out = json.loads(proc.stdout)
+
+    def keys(self) -> dict[str, str]:
+        return self.out["KEYS"]
+
+    def assert_no_plain_key(self, local: dict) -> None:
+        dumped = json.dumps(local, ensure_ascii=False)
+        for key in self.keys().values():
+            self.assertNotIn(key, dumped)
+
+    # ── P1 ──
+    def test_p1_phone_default_set_and_survives_reopen(self) -> None:
+        """[P1] 폰 — 고른 적 없으면 gemini, 고르면 ie_ai_provider 에 남아 창을 다시 열어도 같다. 목록 밖 값은 저장하지 않는다."""
+        self.assertEqual(self.out["p1Default"]["provider"], "gemini")
+        self.assertEqual(self.out["p1Default"]["local"], {})
+        p1 = self.out["p1Set"]
+        self.assertTrue(p1["okSet"])
+        self.assertFalse(p1["badSet"])
+        self.assertEqual(p1["after"]["local"], {"ie_ai_provider": "anthropic"})
+        self.assertEqual(p1["reopened"]["provider"], "anthropic")
+
+    def test_p1_phone_stored_value_closed_list(self) -> None:
+        """[P1] · ③ 폰 — 저장된 값은 공백 · 대소문자를 맞춰 읽고, 목록 밖이면 gemini."""
+        self.assertEqual(
+            self.out["p1Stored"],
+            {"claude": "gemini", "": "gemini", " OpenAI ": "openai", "ANTHROPIC": "anthropic", "gpt": "gemini"},
+        )
+
+    # ── P5 ──
+    def test_p5_save_two_with_pin_locks_both_and_ignores_blank_slot(self) -> None:
+        """[P5] 성공 — 두 칸을 비밀번호와 함께 저장하면 둘 다 암호문 · 소금 · 초기값만 남고, 빈 칸 회사는 건드리지 않는다."""
+        r = self.out["p5SaveTwo"]
+        self.assertTrue(r["ok"])
+        self.assertEqual(set(r["local"]), locked_names("gemini", "openai"))
+        self.assertEqual(set(r["session"]), session_names("gemini", "openai"))
+        self.assert_no_plain_key(r["local"])
+        self.assertEqual(r["keyStates"], {"gemini": "ready", "openai": "ready", "anthropic": "none"})
+
+    def test_p5_one_unlock_opens_all_and_wrong_pin_opens_none(self) -> None:
+        """[P5] 다시 열면 둘 다 잠김, 틀린 비밀번호는 하나도 풀지 않고(저장 그대로), 맞는 비밀번호 한 번에 모두 풀린다."""
+        self.assertEqual(self.out["p5Reopened"]["keyStates"], {"gemini": "locked", "openai": "locked", "anthropic": "none"})
+        wrong = self.out["p5WrongUnlock"]
+        self.assertFalse(wrong["ok"])
+        self.assertEqual(wrong["local"], self.out["p5Reopened"]["local"])
+        self.assertEqual(wrong["session"], {})
+        right = self.out["p5RightUnlock"]
+        self.assertTrue(right["ok"])
+        self.assertEqual(right["keyStates"], {"gemini": "ready", "openai": "ready", "anthropic": "none"})
+        self.assertEqual(right["session"], {f"ie_{p}_api_key_session": self.keys()[p] for p in ("gemini", "openai")})
+        self.assertEqual(right["local"], self.out["p5Reopened"]["local"])
+
+    def test_p5_rejections_leave_everything_as_before(self) -> None:
+        """[P5] 거절 — 잠긴 키가 남는데 비밀번호 없음 · 틀린 비밀번호 · 남는 잠긴 키가 있는데 하나만 평문으로 바꾸기 ·
+        짧은 비밀번호 · 채운 칸 없음은 모두 false 이고 기기 저장 값이 거절 전과 같고 창에 푼 키도 생기지 않는다."""
+        for name in ("p5NoPinWithLocked", "p5WrongPinSave", "p5ReplaceOneOfTwoWithoutPin", "p5ShortPin", "p5NothingFilled"):
+            with self.subTest(name=name):
+                r = self.out[name]
+                self.assertFalse(r["ok"])
+                self.assertFalse(r["threw"])
+                self.assertEqual(r["local"], r["before"])
+                self.assertEqual(r["session"], {})
+
+    def test_p5_right_pin_adds_third_key_to_same_vault(self) -> None:
+        """[P5] 성공 — 잠긴 금고에 맞는 비밀번호로 새 회사 키를 더하면 셋이 한 금고가 되고, 다시 열어 한 번에 풀린다."""
+        r = self.out["p5RightPinSave"]
+        self.assertTrue(r["ok"])
+        self.assertEqual(set(r["local"]), locked_names("gemini", "openai", "anthropic"))
+        self.assert_no_plain_key(r["local"])
+        again = self.out["p5ThreeReopenUnlock"]
+        self.assertTrue(again["ok"])
+        self.assertEqual(again["session"], {f"ie_{p}_api_key_session": k for p, k in self.keys().items()})
+
+    def test_p5_pin_save_also_locks_plain_keys_and_no_pin_keeps_plain(self) -> None:
+        """[P5] 통째로 — 평문 Gemini 키가 있는 기기에 비밀번호와 함께 저장하면 Gemini 키도 잠기고(평문 없음),
+        비밀번호 없이 저장하면 둘 다 평문이다."""
+        locked = self.out["p5LockAlsoPlain"]
+        self.assertTrue(locked["ok"])
+        self.assertEqual(set(locked["local"]), locked_names("gemini", "openai"))
+        self.assert_no_plain_key(locked["local"])
+        plain = self.out["p5PlainPlusPlain"]
+        self.assertTrue(plain["ok"])
+        self.assertEqual(plain["local"], {"ie_gemini_api_key": self.keys()["gemini"], "ie_openai_api_key": self.keys()["openai"]})
+
+    def test_p5_storage_full_rolls_back_all_slots(self) -> None:
+        """[P5] 저장 공간이 차서 두 번째 회사 칸을 못 쓰면 예외로 알리고, 먼저 쓴 칸까지 되돌린다(섞인 금고를 남기지 않음)."""
+        empty = self.out["p5QuotaRollback"]
+        self.assertTrue(empty["threw"])
+        self.assertEqual(empty["local"], {})
+        self.assertEqual(empty["session"], {})
+        vault = self.out["p5QuotaRollbackVault"]
+        self.assertTrue(vault["threw"])
+        self.assertEqual(vault["local"], vault["before"])
+
+    def test_p5_overlapping_saves_never_leave_two_passwords(self) -> None:
+        """[P5] 겹친 저장(PR 2 리뷰 1회차) — 두 창이 다른 비밀번호로 동시에 저장하면 하나만 들어가고 금고는 그 비밀번호로 열린다.
+        한 창에서 다른 비밀번호로 겹쳐 누르면 뒤의 것이 거절된다. 어느 경우든 어느 비밀번호로도 안 열리는 금고가 남지 않는다."""
+        race = self.out["p5RaceTwoTabs"]
+        oks = [r["ok"] for r in race["results"]]
+        self.assertEqual(sorted(oks), [False, True])
+        winner_is_first = oks[0]
+        self.assertEqual(race["unlockPin"]["ok"], winner_is_first)
+        self.assertEqual(race["unlockOther"]["ok"], not winner_is_first)
+        expected = locked_names("gemini") if winner_is_first else locked_names("openai")
+        self.assertEqual(set(race["local"]), expected)
+
+        diff = self.out["p5RaceSameTabDiffPin"]
+        self.assertEqual([r["ok"] for r in diff["results"]], [True, False])
+        self.assertTrue(diff["unlock"]["ok"])
+        self.assertEqual(set(diff["local"]), locked_names("gemini"))
+
+    def test_p5_overlapping_saves_same_pin_both_land_in_one_vault(self) -> None:
+        """[P5] 한 창에서 같은 비밀번호로 두 회사 키 저장을 겹쳐 눌러도 둘 다 들어가고, 다시 열어 그 비밀번호 한 번에 풀린다."""
+        same = self.out["p5RaceSameTabSamePin"]
+        self.assertEqual([r["ok"] for r in same["results"]], [True, True])
+        self.assertTrue(same["unlock"]["ok"])
+        self.assertEqual(set(same["local"]), locked_names("gemini", "openai"))
+        self.assertEqual(same["keyStates"], {"gemini": "ready", "openai": "ready", "anthropic": "none"})
+
+    def test_p5_clear_one_provider_only(self) -> None:
+        """[P5] 지우기는 그 회사 키만 — 평문 · 소금 · 초기값 · 암호문 · 창의 푼 키. 다른 회사 키는 그대로."""
+        r = self.out["p5ClearOne"]
+        self.assertEqual(set(r["local"]), locked_names("gemini"))
+        self.assertEqual(set(r["session"]), session_names("gemini"))
+        self.assertEqual(r["keyStates"]["openai"], "none")
+        self.assertEqual(r["keyStates"]["gemini"], "ready")
+
+    # ── P6 ──
+    def test_p6_legacy_gemini_vault_unlocks_without_rewrite(self) -> None:
+        """[P6] 조각 api-key-vault 때 만든 Gemini 금고 값(새 엔진과 따로 만든 것)이 그 비밀번호로 풀리고, 저장 값은 옮기거나 다시 쓰지 않는다."""
+        r = self.out["p6Legacy"]
+        self.assertEqual(r["lockedState"]["keyStates"]["gemini"], "locked")
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["keyStates"]["gemini"], "ready")
+        self.assertEqual(r["local"], r["before"])
+        self.assertEqual(r["session"], {"ie_gemini_api_key_session": self.keys()["gemini"]})
+        self.assertEqual(self.out["p6LegacyPlain"]["keyStates"]["gemini"], "ready")
+        self.assertEqual(self.out["p6LegacyPlain"]["local"], {"ie_gemini_api_key": self.keys()["gemini"]})
+
+    def test_p6_add_new_provider_to_legacy_vault_with_same_pin(self) -> None:
+        """[P6] 옛 Gemini 금고에 같은 비밀번호로 ChatGPT 키를 더하면 한 금고가 되고 Gemini 키도 그대로 풀린다."""
+        r = self.out["p6LegacyAdd"]
+        self.assertTrue(r["ok"])
+        self.assertEqual(set(r["local"]), locked_names("gemini", "openai"))
+        self.assertEqual(r["keyStates"], {"gemini": "ready", "openai": "ready", "anthropic": "none"})
+
+    # ── P7 ──
+    def test_p7_backup_has_no_keys_vault_values_or_choice(self) -> None:
+        """[P7] 백업 파일에는 세 회사의 키 · 금고 값 · 지금 쓸 AI 가 없다(하지 않을 일 5)."""
+        r = self.out["p7"]
+        text = r["backupText"]
+        for provider, key in self.keys().items():
+            self.assertNotIn(key, text)
+            for name in vault_names(provider) | session_names(provider):
+                self.assertNotIn(name, text)
+            self.assertNotIn(r["local"][f"ie_{provider}_api_key_encrypted"], text)
+        self.assertNotIn("ie_ai_provider", text)
+        # 백업 칸은 이 조각 전과 같다 — 키 · 고른 AI 칸이 새로 생기지 않는다
+        self.assertEqual(sorted(json.loads(text)), ["exportedAt", "history", "quiz", "routine", "version", "vocab"])
+        self.assertNotIn('"openai"', text)
+
+    def test_p7_masked_key_on_screen_hides_the_middle(self) -> None:
+        """[P7] 화면에 보이는 키는 앞 4 · 뒤 4 글자만 — 가운데는 가린다."""
+        masked = self.out["p7"]["masked"]
+        for provider, key in self.keys().items():
+            self.assertNotIn(key, masked[provider])
+            self.assertTrue(masked[provider].startswith(key[:4]))
+            self.assertTrue(masked[provider].endswith(key[-4:]))
+
+
+class TestPhoneSettingsScreen(unittest.TestCase):
+    """PR 2 — 설정 탭 화면 코드(`public/index.html` · `public/app.js`)를 읽어 고르기 단추 · 키 칸 셋 · 저장 갈래를 본다."""
+
+    def setUp(self) -> None:
+        self.html = (REPO_ROOT / "public" / "index.html").read_text(encoding="utf-8")
+        self.app = (REPO_ROOT / "public" / "app.js").read_text(encoding="utf-8")
+
+    def test_three_provider_buttons_and_three_key_inputs(self) -> None:
+        for provider in ai_provider.PROVIDERS:
+            self.assertIn(f'data-ai-provider="{provider}"', self.html)
+            self.assertIn(f'data-key-clear="{provider}"', self.html)
+            self.assertIn(f'data-key-state="{provider}"', self.html)
+        for input_id in ("settings-apikey-input", "settings-apikey-openai-input", "settings-apikey-anthropic-input"):
+            self.assertIn(f'id="{input_id}"', self.html)
+        self.assertNotIn('id="apikey-clear-btn"', self.html)
+
+    def test_save_branches_order(self) -> None:
+        """금고 풀기(키 칸 없이 비밀번호만) → 빈 입력 안내 → 짧은 비밀번호 → 잠긴 키가 남는데 비밀번호 없음 → 저장 순서."""
+        order = [
+            "if (!val && engine.isEncrypted() && pin)",
+            "저장할 API 키를 한 칸 이상 넣어 주세요",
+            "pin.length < engine.MIN_PIN_LENGTH",
+            "if (!pin && keepsLockedKey)",
+            "saved = await engine.saveApiKeyWithPin(val, pin)",
+        ]
+        positions = [self.app.index(text) for text in order]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_choice_buttons_call_engine(self) -> None:
+        self.assertIn("engine.setProvider(provider)", self.app)
+        self.assertIn("engine.clearApiKey(provider)", self.app)
 
 
 if __name__ == "__main__":

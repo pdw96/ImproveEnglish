@@ -577,33 +577,70 @@
         </div>
       </section>
 
-      <!-- ② 기기 내 Gemini API 키 설정 (코드 하드코딩 없음) -->
+      <!-- ② 지금 쓸 AI 고르기 · 회사별 API 키 금고 (코드 하드코딩 없음) — 조각 ai-provider-choice -->
       <section class="card settings-card" aria-labelledby="settings-key-heading">
         <div class="card-header-row">
-          <h2 id="settings-key-heading"><span class="sec-num">02</span> 내 기기 전용 Gemini API 키 설정 및 암호화 금고</h2>
+          <h2 id="settings-key-heading"><span class="sec-num">02</span> 지금 쓸 AI 고르기 · API 키 금고</h2>
           <span id="apikey-status-badge" class="mode-badge mode-text">내장 스마트 코치 동작 중</span>
         </div>
         <p class="history-guide">
-          입력하신 API 키는 외부 서버나 GitHub에 절대 올라가지 않으며, <strong>현재 스마트폰 기기 내부에만 안전하게 저장</strong>됩니다. 타인의 물리적 스마트폰 열람으로부터 키를 보호하려면 <strong>보안 암호화 금고 비밀번호</strong>를 설정해 두세요.
+          첨삭과 오늘의 퀴즈에 쓸 AI 를 고르고, 쓰려는 회사의 API 키를 넣어 두세요. 키는 외부 서버나 GitHub에 절대 올라가지 않으며, <strong>현재 스마트폰 기기 내부에만 저장</strong>됩니다. 타인의 물리적 스마트폰 열람으로부터 키를 보호하려면 <strong>금고 비밀번호</strong>를 설정해 두세요 — 비밀번호 하나로 모든 키가 함께 잠깁니다.
         </p>
 
+        <div class="settings-mode-box">
+          <strong class="settings-sub-title" id="ai-provider-label">지금 쓸 AI</strong>
+          <div class="mode-toggle-group ai-provider-group" role="group" aria-labelledby="ai-provider-label">
+            <button type="button" class="btn btn-secondary" data-ai-provider="gemini" aria-pressed="false">Gemini</button>
+            <button type="button" class="btn btn-secondary" data-ai-provider="openai" aria-pressed="false">ChatGPT</button>
+            <button type="button" class="btn btn-secondary" data-ai-provider="anthropic" aria-pressed="false">Claude</button>
+          </div>
+          <p id="ai-provider-hint" class="settings-sub-desc"></p>
+        </div>
+
         <div class="vocab-form-grid">
-          <div class="form-field form-field-full">
-            <label for="settings-apikey-input">Google Gemini API 키 (선택)</label>
-            <input
-              type="password"
-              id="settings-apikey-input"
-              autocomplete="off"
-              placeholder="AIza... 로 시작하는 개인 Gemini API 키를 붙여넣으세요"
-            />
+          <div class="form-field form-field-full" data-key-row="gemini">
+            <label for="settings-apikey-input">Google Gemini API 키 <span class="key-state" data-key-state="gemini"></span></label>
+            <div class="key-input-row">
+              <input
+                type="password"
+                id="settings-apikey-input"
+                autocomplete="off"
+                placeholder="AIza... 로 시작하는 Gemini 키 (바꿀 때만 넣으세요)"
+              />
+              <button type="button" class="btn btn-secondary btn-small" data-key-clear="gemini">지우기</button>
+            </div>
+          </div>
+          <div class="form-field form-field-full" data-key-row="openai">
+            <label for="settings-apikey-openai-input">OpenAI (ChatGPT) API 키 <span class="key-state" data-key-state="openai"></span></label>
+            <div class="key-input-row">
+              <input
+                type="password"
+                id="settings-apikey-openai-input"
+                autocomplete="off"
+                placeholder="sk-... 로 시작하는 ChatGPT 키 (바꿀 때만 넣으세요)"
+              />
+              <button type="button" class="btn btn-secondary btn-small" data-key-clear="openai">지우기</button>
+            </div>
+          </div>
+          <div class="form-field form-field-full" data-key-row="anthropic">
+            <label for="settings-apikey-anthropic-input">Anthropic (Claude) API 키 <span class="key-state" data-key-state="anthropic"></span></label>
+            <div class="key-input-row">
+              <input
+                type="password"
+                id="settings-apikey-anthropic-input"
+                autocomplete="off"
+                placeholder="sk-ant-... 로 시작하는 Claude 키 (바꿀 때만 넣으세요)"
+              />
+              <button type="button" class="btn btn-secondary btn-small" data-key-clear="anthropic">지우기</button>
+            </div>
           </div>
           <div class="form-field form-field-full">
-            <label for="settings-pin-input">기기 암호화 비밀번호 / PIN 번호 (선택, 입력 시 AES-256 암호화 보관)</label>
+            <label for="settings-pin-input">금고 비밀번호 / PIN (선택, 넣으면 모든 키를 AES-256 으로 함께 잠금)</label>
             <input
               type="password"
               id="settings-pin-input"
               autocomplete="off"
-              placeholder="4자리 이상 비밀번호 (설정 시 폰 내부 저장소에서도 암호문으로 안전하게 잠깁니다)"
+              placeholder="4자리 이상 비밀번호 (잠긴 금고를 풀 때는 이 칸만 넣고 저장)"
             />
           </div>
         </div>
@@ -611,11 +648,8 @@
         <div class="input-footer">
           <span id="apikey-masked-hint" class="char-counter">현재 기기에 저장된 API 키가 없습니다.</span>
           <div class="action-buttons">
-            <button type="button" id="apikey-clear-btn" class="btn btn-secondary">
-              키 삭제
-            </button>
             <button type="button" id="apikey-save-btn" class="btn btn-primary">
-              기기에 API 키 저장 (암호화)
+              키 저장 · 금고 풀기
             </button>
           </div>
         </div>
@@ -660,7 +694,7 @@
         <div class="security-tips-box">
           <ul class="security-tips-list">
             <li>
-              <strong>공용 PC 사용 주의</strong>: PC방이나 타인의 기기에서 접속할 때는 개인 Gemini API 키를 저장하지 마시고 기본 <strong>내장 스마트 코치 모드</strong>로 이용해 주세요.
+              <strong>공용 PC 사용 주의</strong>: PC방이나 타인의 기기에서 접속할 때는 개인 API 키(Gemini · ChatGPT · Claude)를 저장하지 마시고 기본 <strong>내장 스마트 코치 모드</strong>로 이용해 주세요.
             </li>
             <li>
               <strong>정기 백업 권장</strong>: 스마트폰 인터넷 사용 기록(캐시·사이트 데이터)을 전체 삭제하면 기기 내 저장된 단어장도 함께 지워질 수 있으니, 중요한 학습 기록은 위 <strong>[백업 파일 다운로드]</strong>를 통해 파일로 보관해 두시는 것을 추천합니다.
