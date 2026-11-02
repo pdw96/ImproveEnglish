@@ -1483,6 +1483,35 @@ input[type="password"]:focus {
   gap: 0.5rem;
 }
 
+/* 조각 ai-provider-choice: 지금 쓸 AI 고르기 · 회사별 키 칸 */
+.ai-provider-group {
+  margin: 0.45rem 0 0.35rem;
+}
+
+.key-input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.key-input-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn.btn-small {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.key-state {
+  margin-left: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
 .pwa-install-box {
   display: flex;
   align-items: center;

@@ -195,7 +195,8 @@ class TestSlice6VaultScreen(unittest.TestCase):
     def test_input_branches_of_settings_form(self) -> None:
         """설계 ③ — 해제 갈래(키 없이 비밀번호만)와 빈 입력 안내가 저장 갈래보다 먼저 있다."""
         unlock = self.app.index("if (!val && engine.isEncrypted() && pin)")
-        empty = self.app.index("저장할 Gemini API 키를 입력해 주세요.")
+        # 조각 ai-provider-choice 부터 키 칸이 셋이라 빈 입력 안내 글이 바뀌었다(갈래 순서는 그대로)
+        empty = self.app.index("저장할 API 키를 한 칸 이상 넣어 주세요")
         save = self.app.index("saved = await engine.saveApiKeyWithPin(val, pin)")
         self.assertLess(unlock, empty)
         self.assertLess(empty, save)
