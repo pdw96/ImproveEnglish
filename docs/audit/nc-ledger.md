@@ -84,10 +84,11 @@
 
 ## 부적합
 
-**다음 번호: NC-14 · U-9**
+**다음 번호: NC-22 · U-11**
 
 | NC | 무엇 | 낸 회차 | 담당 | 심각도 | 상태 | 판정과 근거 |
 |---|---|---|---|---|---|---|
+| 21 | 회차 30 절의 첫 줄이 기록 머리의 「감사한 커밋」 덧붙임(「호출자가 실어 준 diff — 커밋 안 된 변경이 없다는 것은 호출자 진술」)을 그대로 옮기지 않고 「브리핑 — 회차 28 과 같은 파일, 대장 U-10 줄의 커밋별 stat」으로 바꿨다 — 「등록하는 법」 1(기록 안의 번호도 NC-21) | 회차 31 | `audit-internal` | 낮음 | **등록** | 저자 판정(2026-11-02) 등록 — 바른 첫 줄은 회차 31 절 끝에 적었다(회차 절은 소급하지 않음). 「등록하는 법」 1 에 「기록 머리의 덧붙임은 그대로 두고, 호출자가 본문 근거를 더할 때는 그 뒤에 잇는다」 한 줄을 세우는 것과 함께, **다음 조각의 `audit-internal` 회차**가 닫는다 |
 
 ## 확인불가
 
@@ -101,3 +102,5 @@
 | 6 | 조각 review-quiz PR 1 · PR 2 가 배포된 동안 저장된 퀴즈 기록을 지금(`248838c`) 검증이 받아들이는가 — 떨어지면 다음 쓰기에서 말없이 사라진다 | 회차 20 | `audit-data` | `git diff ec0e41c 248838c`(· `5678444 248838c`)에서 저장 모양과 검증 함수가 더 엄격해졌는지, 또는 저자의 사용 여부 | 호출자 · 저자 | 0 | 닫힘 — 회차 21(`audit-data`, 담당) 판정 적합: 호출자 근거 `git diff ec0e41c 248838c` 에서 저장 모양(`to_dict`)과 읽기 · 검증(`from_dict` 셋 · `_read_state_unlocked` · `validateQuiz*` 셋 · `getQuizState`)이 바뀌지 않았다. PR 1 · PR 2 동안 저장된 기록도 같은 검증으로 읽힌다. 부적합 아님 |
 | 7 | 대장에서 닫혀 지나간 쪽으로 옮긴 NC-9 ~ NC-12 줄의 「무엇」 칸과 첫 판정이 글자 그대로인가(`nc-ledger.md` 「등록하는 법」 8 · 「무엇이 기록이고」) | 회차 23 | `audit-internal` | `git diff 3de9c20 4346094 -- docs/audit/nc-ledger.md docs/audit/nc-ledger-history.md` | 호출자 | 0 | 닫힘 — 회차 24(`audit-internal`, 담당) 판정 적합: 옮긴 NC-9 ~ NC-12 네 줄의 「무엇」 칸 · 낸 회차 · 담당 · 심각도 · 첫 판정(「. 재감사 대기」까지)이 옮기기 전 글과 바이트 단위로 같고, 바뀐 것은 상태 칸과 해소 덧붙임뿐이다. 호출자가 말한 중간 상태(`4346094` 가 지우고 `ab91b9f` 가 되살림)도 맞다. 부적합 아님 |
 | 8 | `4346094` 에서 처음 선 NC-13 줄이 지나간 쪽으로 글자 그대로 옮겨졌는가 | 회차 24 | `audit-internal` | `git diff 4346094 ab91b9f -- docs/audit/nc-ledger.md docs/audit/nc-ledger-history.md` | 호출자 | 0 | 닫힘 — 회차 24(`audit-internal`, 담당) 같은 회차에 근거를 받아 판정 적합: 옮기기 전 줄과 `nc-ledger-history.md` 의 NC-13 줄이 상태 칸 · 해소 덧붙임 말고는 같다. 부적합 아님 |
+| 9 | NC-14 의 심각도 — 저자 PC 브라우저가 공개 사이트에서 `127.0.0.1` 로 가는 요청을 막거나 허락을 묻는가 | 회차 25 | `audit-secrets` | 저자가 PC 서버 모드에 쓰는 브라우저 이름 · 판, 그 브라우저가 공개 주소 페이지의 `127.0.0.1` 요청을 막는지(실제 확인이면 더 좋음), PC 서버를 켜 둔 채 다른 사이트를 여는지 | 저자 | 0 | 닫힘 — 회차 28(`audit-secrets`, 담당): NC-14 해소로 가릴 심각도가 없음. 저자 답(2026-11-02, Chrome · 판 미상)은 받았으나 판정에 쓰지 않음. Host 검사가 빠지거나 약해져 NC-14 가 다시 열리면 U-9 도 다시 연다 |
+| 10 | 착공 문서가 구현보다 먼저였는가, 설계 ① · 날짜 항목의 PR 별 파일 몫이 맞는가(기록 안의 번호는 U-15) | 회차 27 | `audit-internal` | 거르지 않은 `git show --stat bc7c027 79b69f6 424318d 2d578cf` | 호출자 | 0 | 닫힘 — 호출자 근거(2026-11-02): bc7c027 = `INTENT.md` · `docs/master-plan.md` · 조각 9 요구사항 · 설계만, 79b69f6 = `.env.example` · 설계 · `src/{ai_provider,app,gemini,quiz_ai}.py` · `tests/test_ai_provider.py`, 424318d = 설계 · `public/{app.js,index.html,standalone-engine.js,styles.css}` · `tests/{provider_harness.mjs,test_ai_provider.py,test_api_key_vault.py}`, 2d578cf = 설계 · `public/standalone-engine.js` · `tests/{provider_harness.mjs,test_ai_provider.py}`. 회차 30(`audit-internal`, 담당) 판정 적합: 착공 문서 커밋에는 문서만 있고 코드보다 먼저다(`origin/main` 차례 1cac33f → bc7c027 → 79b69f6 → 424318d → 2d578cf), PR 별 파일 몫도 설계 ① · 날짜 항목과 같다. 부적합 아님 |

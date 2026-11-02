@@ -387,6 +387,38 @@ const FAILURES = {
       { status: 200 }
     ),
   wrongForm: () => new Response(JSON.stringify({ unexpected: true }), { status: 200 }),
+  // 닫기 전 감사 NC-15 — 대체 표현 4개 · 핵심 표현 칸이 빈 글이면 서버처럼 거절한다
+  tooManyAlternatives: (provider, init) =>
+    new Response(
+      JSON.stringify(
+        wrap(
+          provider,
+          JSON.stringify(
+            isQuizCall(init)
+              ? { questions: [] }
+              : {
+                  ...FEEDBACK,
+                  alternatives: [...FEEDBACK.alternatives, ...FEEDBACK.alternatives].map((a, i) => ({ ...a, expression: `${a.expression} ${i}` })),
+                }
+          )
+        )
+      ),
+      { status: 200 }
+    ),
+  emptyKeyField: (provider, init) =>
+    new Response(
+      JSON.stringify(
+        wrap(
+          provider,
+          JSON.stringify(
+            isQuizCall(init)
+              ? { questions: [] }
+              : { ...FEEDBACK, keyExpressions: [{ expression: "get off work", meaning: "  ", example: "I get off work at six." }] }
+          )
+        )
+      ),
+      { status: 200 }
+    ),
 };
 const PROVIDER_FAILURES = {
   openaiRefusal: ["openai", (p, init) => new Response(JSON.stringify(wrap("openai", JSON.stringify(isQuizCall(init) ? QUIZ_REPLY : FEEDBACK), { refusal: "I can't help with that." })), { status: 200 })],
@@ -409,6 +441,21 @@ for (const provider of PROVIDER_IDS) {
 }
 for (const [name, [provider, responder]] of Object.entries(PROVIDER_FAILURES)) {
   out.pr3Failures[`${provider}:${name}`] = await failScene(provider, responder);
+}
+
+// P3 — 검사를 지난 응답은 서버처럼 앞뒤 공백을 지우고 정해진 칸만 남겨 기록한다(닫기 전 감사 NC-15)
+{
+  const messy = {
+    corrected: `  ${FEEDBACK.corrected}  `,
+    explanation: FEEDBACK.explanation,
+    alternatives: FEEDBACK.alternatives.map((a) => ({ ...a, nuance: ` ${a.nuance} `, extra: "버릴 칸" })),
+    keyExpressions: FEEDBACK.keyExpressions,
+    provider: "openai",
+  };
+  const w = aiWindow("openai");
+  w.ctx.aiResponder = async () => okReply("openai", messy);
+  const fb = await feedbackOf(w);
+  out.pr3Normalized = { feedback: fb, expected: FEEDBACK, history: w.ctx.localStorage.getItem("ie_feedback_history_v1") };
 }
 
 // P4 — 고른 회사의 키가 없거나 잠겨 있으면 아무 데도 부르지 않는다(다른 두 회사 키는 있다)

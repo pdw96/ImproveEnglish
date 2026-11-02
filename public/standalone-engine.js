@@ -927,21 +927,33 @@
     return { status: "failed", provider };
   }
 
-  // 첨삭 응답 검사 — 이 조각 전 엔진의 검사와 같다([P3])
+  // 첨삭 응답 검사 — 서버 FeedbackResponse.from_dict 와 같은 규칙([P3]): 교정문 · 설명은 빈 글이 아니고, 대체 표현 2~3개,
+  // 핵심 표현 1개 이상, 원소마다 칸이 빈 글이 아니다. 앞뒤 공백을 지우고 정해진 칸만 남긴다. 못 쓰면 null(다음 후보 → 내장 코치).
+  // 회사로 보내는 스키마에서는 개수 제한을 빼므로(toJsonSchema) 개수는 여기서 문다 — 닫기 전 감사 NC-15
+  function filledText(value) {
+    return typeof value === "string" && value.trim() !== "";
+  }
   function acceptFeedbackText(text) {
-    const parsed = JSON.parse(text);
-    if (
-      parsed &&
-      typeof parsed.corrected === "string" &&
-      typeof parsed.explanation === "string" &&
-      Array.isArray(parsed.alternatives) &&
-      parsed.alternatives.length >= 2 &&
-      Array.isArray(parsed.keyExpressions) &&
-      parsed.keyExpressions.length >= 1
-    ) {
-      return parsed;
+    const data = JSON.parse(text);
+    if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+    if (!filledText(data.corrected) || !filledText(data.explanation)) return null;
+    const alts = data.alternatives;
+    const keys = data.keyExpressions;
+    if (!Array.isArray(alts) || alts.length < 2 || alts.length > 3) return null;
+    if (!Array.isArray(keys) || keys.length < 1) return null;
+    const alternatives = [];
+    for (const a of alts) {
+      if (!a || typeof a !== "object" || !filledText(a.expression) || !filledText(a.nuance)) return null;
+      alternatives.push({ expression: a.expression.trim(), nuance: a.nuance.trim() });
     }
-    return null;
+    const keyExpressions = [];
+    for (const k of keys) {
+      if (!k || typeof k !== "object" || !filledText(k.expression) || !filledText(k.meaning) || !filledText(k.example)) {
+        return null;
+      }
+      keyExpressions.push({ expression: k.expression.trim(), meaning: k.meaning.trim(), example: k.example.trim() });
+    }
+    return { corrected: data.corrected.trim(), explanation: data.explanation.trim(), alternatives, keyExpressions };
   }
 
   // 첨삭 — 고른 AI 로 받고, 키 없음 · 금고 잠김 · 실패면 내장 스마트 코치([P4] — 지금과 같음)

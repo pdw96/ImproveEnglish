@@ -92,7 +92,8 @@ RESPONSE_SCHEMA: dict[str, Any] = {
 
 
 class GeminiServiceError(RuntimeError):
-    """Gemini API 호출 또는 설정 과정에서 발생한 예외(키 값은 절대 포함하지 않음)."""
+    """AI 호출 또는 설정 과정에서 발생한 예외(키 값은 절대 포함하지 않음). 이름은 조각 ai-feedback 때 그대로지만,
+    조각 9(ai-provider-choice)부터 `src/ai_provider.py` 가 `AiServiceError` 로 받아 Gemini · ChatGPT · Claude 모두에 쓴다."""
 
 
 def load_dotenv_file(
@@ -342,7 +343,8 @@ def _default_http_transport(
     body: bytes,
     api_key_to_mask: str = "",
 ) -> dict[str, Any]:
-    """표준 urllib을 사용해 Gemini REST 엔드포인트를 호출한다."""
+    """표준 urllib 으로 AI 회사 주소에 JSON 을 POST 한다 — Gemini 와, 조각 9(ai-provider-choice)부터는 `src/ai_provider.py` 를
+    거쳐 OpenAI · Anthropic 주소도 부른다. 오류 글의 키는 가린다."""
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=25) as response:
