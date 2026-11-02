@@ -205,6 +205,7 @@ def request_text(provider: str, api_key: str, call: AiCall, transport: Transport
     """고른 회사 하나에 보낸다([P2]). 모델 후보는 HTTP 404 일 때만 다음으로 넘어가고, 그 밖의 실패는 바로 올린다."""
     sender = transport or _default_transport(api_key)
     errors: list[str] = []
+    last_status: int | None = None
     for model in MODEL_CANDIDATES[provider]:
         url, headers, body = build_request(provider, model, api_key, call)
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -212,14 +213,20 @@ def request_text(provider: str, api_key: str, call: AiCall, transport: Transport
             raw = sender(url, headers, payload)
         except AiServiceError as exc:
             errors.append(str(exc).replace(api_key, "[REDACTED]"))
-            if http_status(exc) != 404:
+            last_status = http_status(exc)
+            if last_status != 404:
                 break
             continue
         return extract_text(provider, raw)
-    raise AiServiceError(" | ".join(dict.fromkeys(errors)))
+    final = AiServiceError(" | ".join(dict.fromkeys(errors)))
+    # 묶은 글에는 앞 모델의 404 가 먼저 나온다 — 판정([P4])은 마지막 실패의 상태로 한다(PR 1 리뷰 1회차)
+    final.http_status = last_status
+    raise final
 
 
 def http_status(exc: BaseException) -> int | None:
+    if hasattr(exc, "http_status"):
+        return exc.http_status
     match = _HTTP_STATUS.search(str(exc))
     return int(match.group(1)) if match else None
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import date
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import importlib
 import json
 import mimetypes
 import os
@@ -71,9 +70,9 @@ class FeedbackApp:
     def _call_ai(self, req: FeedbackRequest) -> FeedbackResponse:
         if self._custom_ai_fn is not None:
             return self._custom_ai_fn(req)
-        if os.environ.get("DOTENV_AUTORELOAD") == "1":
-            importlib.reload(gemini_module)
-        # 조각 9(ai-provider-choice): `.env` 의 AI_PROVIDER 로 고른 회사 하나에 보낸다([P1] · [P2])
+        # 조각 9(ai-provider-choice): `.env` 의 AI_PROVIDER 로 고른 회사 하나에 보낸다([P1] · [P2]).
+        # 모듈을 다시 읽지(reload) 않는다 — 다시 읽으면 오류 클래스가 새로 생겨 [P4] 의 오류 처리가 어긋난다(PR 1 리뷰 1회차).
+        # `.env` 는 DOTENV_AUTORELOAD 일 때 ai_provider 가 요청마다 다시 읽는다.
         return ai_provider_module.generate_feedback(req)
 
     def _parse_json_body(

@@ -265,6 +265,50 @@ class TestP4Failures(unittest.TestCase):
                 with self.assertRaises(ai_provider.AiServiceError):
                     ai_provider.generate_feedback(REQ, transport=Recorder(http_error(code)))
 
+    def test_p4_final_failure_status_decides_after_404(self) -> None:
+        """[P4] 앞 모델이 404 이고 다음 모델이 크레딧 · 한도면 내장 코치 — 묶은 오류의 첫 상태(404)가 아니라 마지막 실패로 판정한다(PR 1 리뷰 1회차)."""
+        coach = gemini_module._build_local_coach_feedback(REQ)
+        for provider, last in (("gemini", 429), ("gemini", 402), ("openai", 429)):
+            with self.subTest(provider=provider, last=last), mock.patch.dict(os.environ, env_for(provider, **KEYS)):
+                rec = Recorder(http_error(404), http_error(last))
+                self.assertEqual(ai_provider.generate_feedback(REQ, transport=rec), coach)
+                self.assertEqual(len(rec.calls), 2)
+        with mock.patch.dict(os.environ, env_for("gemini", **KEYS)):
+            with self.assertRaises(ai_provider.AiServiceError):
+                ai_provider.generate_feedback(REQ, transport=Recorder(http_error(404), http_error(500)))
+
+    def test_p4_auto_reload_mode_keeps_error_handling(self) -> None:
+        """[P4] 실제 PC 서버처럼 DOTENV_AUTORELOAD=1 로 돌 때도 — 키 없음은 502 오류 안내(저장 없음), 크레딧 · 한도는 내장 코치로 저장된다
+        (PR 1 리뷰 1회차: 모듈을 다시 읽어 오류 클래스가 어긋나던 것)."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        history_path = pathlib.Path(tmp.name) / "history.json"
+        app = FeedbackApp(store=HistoryStore(history_path))
+        body = json.dumps({"text": REQ.text, "inputMode": "text"}, ensure_ascii=False).encode("utf-8")
+        coach = gemini_module._build_local_coach_feedback(REQ)
+
+        def limit(url, headers, payload, api_key_to_mask=""):
+            raise http_error(429)
+
+        no_key = env_for("openai", gemini=KEYS["gemini"])
+        no_key["DOTENV_AUTORELOAD"] = "1"
+        with mock.patch.dict(os.environ, no_key), mock.patch.object(gemini_module, "load_dotenv_file", lambda **kw: None):
+            for _ in range(2):  # 두 번째 요청도 같다
+                status, data = app.handle_post_feedback(body)
+                self.assertEqual(status, 502)
+                self.assertIn("OPENAI_API_KEY", data["error"])
+        self.assertFalse(history_path.exists())
+
+        limited = env_for("anthropic", **KEYS)
+        limited["DOTENV_AUTORELOAD"] = "1"
+        with mock.patch.dict(os.environ, limited), mock.patch.object(
+            gemini_module, "load_dotenv_file", lambda **kw: None
+        ), mock.patch.object(gemini_module, "_default_http_transport", limit):
+            for _ in range(2):
+                status, record = app.handle_post_feedback(body)
+                self.assertEqual(status, 200)
+                self.assertEqual(record["feedback"], coach.to_dict())
+
     def test_p4_no_key_for_chosen_provider_names_its_env_and_never_calls(self) -> None:
         """[P4] 고른 회사 키가 없으면(다른 회사 키가 있어도) 부르지 않고 그 회사 환경변수 이름을 담은 안내 — 자리표시 값도 키 없음."""
 
